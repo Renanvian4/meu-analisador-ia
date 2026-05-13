@@ -6,27 +6,21 @@ import tensorflow as tf
 import pickle
 import time
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # --- CONFIGURAÇÃO DE INTERFACE ---
 st.set_page_config(page_title="IA Analítica Pro", layout="wide", initial_sidebar_state="expanded")
 
-# Estilização para tablet
 st.markdown("""
     <style>
         .main .block-container { max-width: 100%; padding-top: 0.5rem; }
         .stDataFrame { font-size: 0.75rem; }
         div.stButton > button:first-child { width: 100%; }
-        .signal-card { border-left: 5px solid #00FF00; padding:10px; background:#1e1e1e; border-radius:5px; margin-bottom:10px; }
+        .signal-card { border: 1px solid #444; padding: 10px; border-radius: 10px; text-align: center; background-color: #1e1e1e; margin-bottom:10px; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- CONFIGURAÇÃO DE DIRETÓRIOS ---
-FOLDER_BRAIN = "cerebro_ia_dados"
-if not os.path.exists(FOLDER_BRAIN):
-    os.makedirs(FOLDER_BRAIN)
-
-# --- CARREGAMENTO DE MODELOS ---
+# --- CARREGAMENTO DE ASSETS (IA) ---
 @st.cache_resource
 def load_assets():
     try:
@@ -46,114 +40,102 @@ def load_assets():
 
 modelo, scaler = load_assets()
 
-# --- MOTOR DE APRENDIZADO (DEEP SCAN) ---
-def executar_deep_scan(selecionados):
-    timeframes = {"1m": "7d", "5m": "30d", "15m": "60d", "1h": "120d"}
-    prog = st.sidebar.progress(0)
-    total = len(selecionados) * len(timeframes)
-    count = 0
-    for ativo in selecionados:
-        for tf_nome, periodo in timeframes.items():
-            count += 1
-            try:
-                hist = yf.download(ativo, period=periodo, interval=tf_nome, progress=False)
-                if not hist.empty:
-                    close = hist['Close'].values.flatten()
-                    ema = pd.Series(close).ewm(span=200, adjust=False).mean()
-                    dist = (close - ema) / ema
-                    df_p = pd.DataFrame([[dist[i], 1 if close[i+5] > close[i] else 0] for i in range(50, len(close)-5)])
-                    df_p.to_csv(f"{FOLDER_BRAIN}/brain_{ativo}_{tf_nome}.csv", index=False, header=False)
-            except: pass
-            prog.progress(count / total)
-
-# --- SIDEBAR (CONTROLES) ---
-st.sidebar.title("🛰️ Radar Adaptativo")
+# --- SIDEBAR ---
+st.sidebar.title("🛰️ Radar IA Pro")
 
 DICIONARIO_BASE = {
-    "🚀 Cripto (Favoritas)": ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "DOGE-USD"],
-    "📊 Futuros B3": ["WIN=F", "WDO=F"],
-    "🇧🇷 Ações B3": ["PETR4.SA", "VALE3.SA", "ITUB4.SA", "BBDC4.SA", "ABEV3.SA"]
+    "🚀 Cripto": ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "DOGE-USD"],
+    "📊 B3": ["WIN=F", "WDO=F", "PETR4.SA", "VALE3.SA"]
 }
 
 cat = st.sidebar.selectbox("Filtrar Categoria:", list(DICIONARIO_BASE.keys()))
-favoritos = st.sidebar.multiselect("Favoritos:", DICIONARIO_BASE[cat], default=DICIONARIO_BASE[cat][:2])
+ativos_sel = st.sidebar.multiselect("Ativos:", DICIONARIO_BASE[cat], default=DICIONARIO_BASE[cat][:2])
+tf_op = st.sidebar.selectbox("Timeframe:", ["1m", "5m", "15m", "1h"], index=0)
 
-# Campo de Busca para qualquer Cripto
-busca_extra = st.sidebar.text_input("Incluir Cripto Extra (Ticker API):").upper().strip()
+# Scanner inicia DESATIVADO
+btn_on = st.sidebar.toggle("🚀 Iniciar Scanner IA", value=False)
 
-ativos_sel = list(favoritos)
-if busca_extra and busca_extra not in ativos_sel:
-    ativos_sel.append(busca_extra)
-
-tf_op = st.sidebar.selectbox("Timeframe:", ["1m", "5m", "15m", "1h"], index=1)
-
-if st.sidebar.button("🧠 Deep Scan (Estudar Selecionados)"):
-    if ativos_sel:
-        executar_deep_scan(ativos_sel)
-        st.sidebar.success("Memória Atualizada!")
-
-# SOLUÇÃO: Scanner inicia DESATIVADO (value=False)
-btn_on = st.sidebar.toggle("🚀 Scanner em Tempo Real", value=False)
-
-if st.sidebar.button("Limpar Log Visual"):
+if st.sidebar.button("Limpar Histórico"):
     st.session_state.log_visual = []
     st.rerun()
 
 # --- LAYOUT PRINCIPAL ---
-st.title("IA QUANT - LIVE MARKET")
+st.title("🛰️ IA QUANT - LIVE SCANNER")
 col_sinais, col_log = st.columns([1, 1.2])
 
 if 'log_visual' not in st.session_state:
     st.session_state.log_visual = []
 
-with col_sinais:
-    st.subheader("⚡ Sinais")
-    area_sinais = st.empty()
-
-with col_log:
-    st.subheader("📜 Auditoria")
-    area_log = st.empty()
+area_sinais = col_sinais.empty()
+area_log = col_log.empty()
 
 # --- LOOP DE EXECUÇÃO ---
 if btn_on and modelo is not None and ativos_sel:
-    # Mostra mensagem de processamento inicial
-    area_sinais.info("Iniciando monitoramento da API...")
-    
     while True:
         try:
             for ativo in ativos_sel:
-                # Download de dados atualizados
-                d = yf.download(ativo, period="2d", interval=tf_op, progress=False)
-                if d.empty: continue
+                # CORREÇÃO: period="7d" para garantir dados para EMA200 e RSI
+                df = yf.download(ativo, period="7d", interval=tf_op, progress=False)
+                if df.empty or len(df) < 50: continue
+                if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
                 
-                c_atual = d['Close'].iloc[-1]
-                ema_v = d['Close'].ewm(span=200, adjust=False).mean().iloc[-1]
-                tipo_s = "COMPRA" if c_atual > ema_v else "VENDA"
+                # RECALCULO DOS INDICADORES DA VERSÃO FUNCIONAL
+                df['RSI'] = 100 - (100 / (1 + df['Close'].diff().gt(0).rolling(14).mean() / df['Close'].diff().lt(0).rolling(14).mean()))
+                df['EMA_200'] = df['Close'].ewm(span=200, adjust=False).mean()
+                df['Dist_EMA'] = (df['Close'] - df['EMA_200']) / df['EMA_200']
+                df['Vol_ZScore'] = (df['Volume'] - df['Volume'].rolling(20).mean()) / df['Volume'].rolling(20).std()
+                pavio = df['High'] - df['Low']
+                df['Forca_Corpo'] = np.where(pavio > 0, abs(df['Close'] - df['Open']) / pavio, 0)
                 
-                info = {
-                    "Ativo": ativo, 
-                    "Hora": datetime.now().strftime("%H:%M:%S"), 
-                    "Preço": f"{c_atual:.2f}", 
-                    "Tipo": tipo_s
-                }
+                df_clean = df.dropna(subset=['RSI', 'Dist_EMA', 'Vol_ZScore', 'Forca_Corpo'])
                 
-                # Validação para registro de sinais únicos
-                if not any(x['Ativo'] == ativo and x['Hora'][:5] == info['Hora'][:5] for x in st.session_state.log_visual):
-                    st.session_state.log_visual.insert(0, info)
+                if not df_clean.empty:
+                    # PREDIÇÃO REAL COM A IA
+                    features = ['RSI', 'Dist_EMA', 'Vol_ZScore', 'Forca_Corpo']
+                    input_scaled = scaler.transform(df_clean[features].iloc[-1:].values)
+                    preds = modelo.predict(input_scaled, verbose=0)[0]
+                    
+                    prob_neutro, prob_venda, prob_compra = preds
+                    
+                    # Definição de Status e Cor
+                    status, cor = "⏳ Neutro", "white"
+                    if prob_compra > 0.60:
+                        status, cor = "🚀 COMPRA", "#00FF00"
+                    elif prob_venda > 0.60:
+                        status, cor = "📉 VENDA", "#FF4B4B"
+                    
+                    if status != "⏳ Neutro":
+                        info = {
+                            "Ativo": ativo, 
+                            "Hora": datetime.now().strftime("%H:%M:%S"), 
+                            "Preço": f"{df_clean['Close'].iloc[-1]:.2f}", 
+                            "Status": status,
+                            "Confiança": f"{max(prob_compra, prob_venda)*100:.1f}%",
+                            "Color": cor
+                        }
+                        
+                        # Adiciona ao histórico se for novo
+                        if not any(x['Ativo'] == ativo and x['Hora'][:5] == info['Hora'][:5] for x in st.session_state.log_visual):
+                            st.session_state.log_visual.insert(0, info)
 
-                # Atualização forçada dos campos centrais[cite: 7]
-                with area_sinais.container():
-                    for s in st.session_state.log_visual[:6]:
-                        cor = "#00FF00" if s['Tipo'] == "COMPRA" else "#FF4B4B"
-                        st.markdown(f'<div class="signal-card" style="border-left-color:{cor}"><b>{s["Ativo"]}</b><br><span style="color:{cor}">{s["Tipo"]}</span> @ {s["Preço"]}</div>', unsafe_allow_html=True)
+            # RENDERIZAÇÃO LADO A LADO
+            with area_sinais.container():
+                for s in st.session_state.log_visual[:6]:
+                    st.markdown(f"""
+                        <div class="signal-card">
+                            <h3 style="margin:0;">{s['Ativo']}</h3>
+                            <h2 style="color:{s['Color']}; margin:5px 0;">{s['Status']}</h2>
+                            <p style="margin:0;">Preço: {s['Preço']} | {s['Confiança']}</p>
+                        </div>
+                    """, unsafe_allow_html=True)
 
-                with area_log.container():
-                    if st.session_state.log_visual:
-                        st.dataframe(pd.DataFrame(st.session_state.log_visual), use_container_width=True, hide_index=True)
+            with area_log.container():
+                if st.session_state.log_visual:
+                    df_visual = pd.DataFrame(st.session_state.log_visual).drop(columns=['Color'])
+                    st.table(df_visual)
 
-            time.sleep(10) # Intervalo para evitar bloqueio de IP da API
-        except Exception:
+            time.sleep(10)
+        except Exception as e:
             time.sleep(5)
 elif not btn_on:
-    area_sinais.warning("Scanner pausado. Ative na barra lateral para ver os sinais.")
-    area_log.info("Aguardando ativação para registrar sinais.")
+    area_sinais.warning("Scanner pausado. Ative para iniciar.")
