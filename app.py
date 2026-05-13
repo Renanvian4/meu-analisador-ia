@@ -9,7 +9,7 @@ import os
 from datetime import datetime, timedelta
 
 # --- CONFIGURAÇÃO DE INTERFACE ---
-st.set_page_config(page_title="IA Analitico - Multi-Ativos", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="IA Analitica - Multi-Ativos", layout="wide", initial_sidebar_state="expanded")
 
 # Estilização para tablet
 st.markdown("""
@@ -21,17 +21,10 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- MAPEAMENTO DE ATIVOS BASE ---
-DICIONARIO_BASE = {
-    "📊 Futuros B3": ["WIN=F", "WDO=F"],
-    "🚀 Cripto (Favoritas)": ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "DOGE-USD"],
-    "🇧🇷 Ações B3": ["PETR4.SA", "VALE3.SA", "ITUB4.SA", "BBDC4.SA", "ABEV3.SA"]
-}
-
-# --- DIRETÓRIOS ---
+# --- CONFIGURAÇÃO DE DIRETÓRIOS ---
 FOLDER_BRAIN = "cerebro_ia_dados"
 if not os.path.exists(FOLDER_BRAIN):
-    os.makedirs(FOLDER_BRAIN)
+    os.makedirs(FOLDER_BRAIN)[cite: 5]
 
 # --- CARREGAMENTO DE MODELOS ---
 @st.cache_resource
@@ -51,9 +44,9 @@ def load_assets():
     except:
         return None, None
 
-modelo, scaler = load_assets()
+modelo, scaler = load_assets()[cite: 5]
 
-# --- MOTOR DE DEEP SCAN ---
+# --- MOTOR DE APRENDIZADO (DEEP SCAN) ---
 def executar_deep_scan(selecionados):
     timeframes = {"1m": "7d", "5m": "30d", "15m": "60d", "1h": "120d"}
     prog = st.sidebar.progress(0)
@@ -71,79 +64,89 @@ def executar_deep_scan(selecionados):
                     df_p = pd.DataFrame([[dist[i], 1 if close[i+5] > close[i] else 0] for i in range(50, len(close)-5)])
                     df_p.to_csv(f"{FOLDER_BRAIN}/brain_{ativo}_{tf_nome}.csv", index=False, header=False)
             except: pass
-            prog.progress(count / total)
+            prog.progress(count / total)[cite: 5]
 
-# --- SIDEBAR (BUSCA LIVRE DE CRIPTOS) ---
+# --- SIDEBAR ---
 st.sidebar.title("🛰️ Radar Adaptativo")
 
+DICIONARIO_BASE = {
+    "🚀 Cripto (Favoritas)": ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "DOGE-USD"],
+    "📊 Futuros B3": ["WIN=F", "WDO=F"],
+    "🇧🇷 Ações B3": ["PETR4.SA", "VALE3.SA", "ITUB4.SA", "BBDC4.SA", "ABEV3.SA"]
+}
+
 cat = st.sidebar.selectbox("Filtrar Categoria:", list(DICIONARIO_BASE.keys()))
-ativos_favoritos = st.sidebar.multiselect("Favoritos:", DICIONARIO_BASE[cat], default=DICIONARIO_BASE[cat][:2])
+favoritos = st.sidebar.multiselect("Favoritos:", DICIONARIO_BASE[cat], default=DICIONARIO_BASE[cat][:2])
 
-st.sidebar.markdown("---")
-# Campo para digitar QUALQUER cripto (ex: ADA-USD, SHIB-USD, AVAX-USD)
-busca_extra = st.sidebar.text_input("Incluir Cripto Extra (Ticker API):").upper().strip()
+# Campo de Busca para qualquer Cripto
+busca_extra = st.sidebar.text_input("Incluir Cripto Extra:").upper().strip()
 
-# Consolidação da lista de monitoramento
-ativos_sel = list(ativos_favoritos)
-if busca_extra:
-    if busca_extra not in ativos_sel:
-        ativos_sel.append(busca_extra)
+ativos_sel = list(favoritos)
+if busca_extra and busca_extra not in ativos_sel:
+    ativos_sel.append(busca_extra)[cite: 5]
 
 tf_op = st.sidebar.selectbox("Timeframe:", ["1m", "5m", "15m", "1h"], index=1)
 
 if st.sidebar.button("🧠 Deep Scan (Estudar Selecionados)"):
     if ativos_sel:
         executar_deep_scan(ativos_sel)
-        st.sidebar.success("Memória Atualizada!")
+        st.sidebar.success("Memória Atualizada!")[cite: 5]
 
 btn_on = st.sidebar.toggle("🚀 Scanner em Tempo Real", value=True)
 if st.sidebar.button("🗑️ Limpar Log Visual"):
     st.session_state.log_visual = []
     st.rerun()
 
-# --- LAYOUT PRINCIPAL ---
-st.title("IA QUANT - LIVE MARKET")
-col_sinais, col_log = st.columns([1, 1.2])
+# --- LAYOUT PRINCIPAL (RESTAURADO) ---
+st.title("IA ANALITICA - LIVE MARKET")
+col_sinais, col_log = st.columns([1, 1.2])[cite: 5]
 
 if 'log_visual' not in st.session_state:
     st.session_state.log_visual = []
 
+# Espaços fixos para evitar que o layout "suma"
 with col_sinais:
     st.subheader("⚡ Sinais")
     area_sinais = st.empty()
 
 with col_log:
-    st.subheader("📜 Auditoria")
-    area_log = st.empty()
+    st.subheader("📜 Histórico")
+    area_log = st.empty()[cite: 5]
 
-# --- LOOP DE PROCESSAMENTO ---
+# --- LOOP DE EXECUÇÃO (CORREÇÃO DE EXIBIÇÃO) ---
 if btn_on and modelo is not None and ativos_sel:
     while True:
         try:
-            dados = yf.download(ativos_sel, period="2d", interval=tf_op, progress=False, group_by='ticker')
-            
+            # Processamento individual para exibição imediata
             for ativo in ativos_sel:
-                df = dados[ativo] if len(ativos_sel) > 1 else dados
-                if df.empty or len(df) < 5: continue
+                d = yf.download(ativo, period="2d", interval=tf_op, progress=False)
+                if d.empty: continue
                 
-                c = df['Close'].iloc[-1]
-                ema = df['Close'].ewm(span=200, adjust=False).mean().iloc[-1]
-                tipo = "COMPRA" if c > ema else "VENDA"
+                c_atual = d['Close'].iloc[-1]
+                ema_v = d['Close'].ewm(span=200, adjust=False).mean().iloc[-1]
+                tipo_s = "COMPRA" if c_atual > ema_v else "VENDA"
                 
-                info = {"Ativo": ativo, "Hora": datetime.now().strftime("%H:%M:%S"), "Preço": f"{c:.2f}", "Tipo": tipo}
+                info = {
+                    "Ativo": ativo, 
+                    "Hora": datetime.now().strftime("%H:%M:%S"), 
+                    "Preço": f"{c_atual:.2f}", 
+                    "Tipo": tipo_s
+                }
                 
-                if not any(x['Ativo'] == ativo and x['Hora'] == info['Hora'] for x in st.session_state.log_visual):
+                # Adiciona ao log apenas se for novo[cite: 5]
+                if not any(x['Ativo'] == ativo and x['Hora'][:5] == info['Hora'][:5] for x in st.session_state.log_visual):
                     st.session_state.log_visual.insert(0, info)
 
-            with area_sinais.container():
-                for s in st.session_state.log_visual[:6]:
-                    cor = "#00FF00" if s['Tipo'] == "COMPRA" else "#FF4B4B"
-                    st.markdown(f'<div class="signal-card" style="border-left-color:{cor}"><b>{s["Ativo"]}</b><br><span style="color:{cor}">{s["Tipo"]}</span> @ {s["Preço"]}</div>', unsafe_allow_html=True)
+                # Atualiza a tela a cada ativo processado[cite: 5]
+                with area_sinais.container():
+                    for s in st.session_state.log_visual[:6]:
+                        cor = "#00FF00" if s['Tipo'] == "COMPRA" else "#FF4B4B"
+                        st.markdown(f'<div class="signal-card" style="border-left-color:{cor}"><b>{s["Ativo"]}</b><br><span style="color:{cor}">{s["Tipo"]}</span> @ {s["Preço"]}</div>', unsafe_allow_html=True)
 
-            with area_log.container():
-                if st.session_state.log_visual:
-                    st.dataframe(pd.DataFrame(st.session_state.log_visual), use_container_width=True, hide_index=True)
+                with area_log.container():
+                    if st.session_state.log_visual:
+                        st.dataframe(pd.DataFrame(st.session_state.log_visual), use_container_width=True, hide_index=True)
 
-            time.sleep(10)
+            time.sleep(5) # Intervalo menor para maior fluidez[cite: 5]
         except:
-            time.sleep(5)
+            time.sleep(2)
