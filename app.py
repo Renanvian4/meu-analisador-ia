@@ -36,31 +36,57 @@ ativo = st.selectbox("Par do TradingView", ["BTC-USD", "ETH-USD", "SOL-USD", "PE
 if st.button('Ligar Analisador'):
     placeholder = st.empty()
     while True:
-        # Reduzimos o período de busca para 5 dias (mínimo seguro para calcular EMA 200 em 1m)
-        # O argumento progress=False evita poluir os logs e acelera a execução
-        df = yf.download(ativo, period="5d", interval="1m", progress=False)
+        # Aumentamos para '7d' para garantir que SEMPRE haja 200 candles de 1m para a EMA
+        df = yf.download(ativo, period="7d", interval="1m", progress=False)
         
         if isinstance(df.columns, pd.MultiIndex): 
             df.columns = df.columns.get_level_values(0)
         
-        # ... (mantém os cálculos de indicadores iguais) ...
+        # --- CÁLCULOS COM PROTEÇÃO ---
+        # RSI
+        delta = df['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        df['RSI'] = 100 - (100 / (1 + gain/loss))
         
-        df_clean = df.dropna()
+        # EMA 200 e Distância
+        df['EMA_200'] = df['Close'].ewm(span=200, adjust=False).mean()
+        df['Dist_EMA'] = (df['Close'] - df['EMA_200']) / df['EMA_200']
+        
+        # Volume e Volatilidade
+        df['Vol_ZScore'] = (df['Volume'] - df['Volume'].rolling(20).mean()) / df['Volume'].rolling(20).std()
+        
+        pavio = df['High'] - df['Low']
+        df['Forca_Corpo'] = np.where(pavio > 0, abs(df['Close'] - df['Open']) / pavio, 0)
+        
+        # --- LIMPEZA E VALIDAÇÃO ---
+        features = ['RSI', 'Dist_EMA', 'Vol_ZScore', 'Forca_Corpo']
+        
+        # Removemos linhas nulas que surgem no início dos cálculos das médias
+        df_clean = df.dropna(subset=features)
         
         if not df_clean.empty:
-            features = ['RSI', 'Dist_EMA', 'Vol_ZScore', 'Forca_Corpo']
+            # Selecionamos os dados para a IA
             input_data = df_clean[features].iloc[-1:].values
             input_scaled = scaler.transform(input_data)
             
             preds = modelo.predict(input_scaled, verbose=0)[0]
             
             with placeholder.container():
-                # Interface mais compacta para facilitar o refresh visual
                 st.subheader(f"📊 {ativo} - {time.strftime('%H:%M:%S')}")
                 st.metric("Preço", f"{df_clean['Close'].iloc[-1]:.2f}")
                 
-                # ... (mantém a lógica de sucesso/erro dos sinais) ...
+                # Sinais Visuais
+                c1, c2 = st.columns(2)
+                c1.write(f"📈 Alta: {preds[2]*100:.1f}%")
+                c2.write(f"📉 Baixa: {preds[1]*100:.1f}%")
                 
-            # --- O PONTO CHAVE: REDUÇÃO DO TEMPO ---
-            # 2 segundos é o limite seguro para evitar erro 429 (Too Many Requests)
-            time.sleep(2) 
+                if preds[2] > 0.60: st.success("🚀 SINAL DE COMPRA")
+                elif preds[1] > 0.60: st.error("📉 SINAL DE VENDA")
+                
+                st.line_chart(df_clean['Close'].tail(30))
+        else:
+            st.warning("⏳ Aguardando dados suficientes para calcular indicadores...")
+        
+        # Tempo de atualização rápido
+        time.sleep(2)
