@@ -23,7 +23,7 @@ st.markdown("""
 # --- DIRETÓRIOS E ASSETS ---
 FOLDER_BRAIN = "cerebro_ia_dados"
 if not os.path.exists(FOLDER_BRAIN):
-    os.makedirs(FOLDER_BRAIN)[cite: 5]
+    os.makedirs(FOLDER_BRAIN)
 
 @st.cache_resource
 def load_assets():
@@ -42,7 +42,8 @@ def load_assets():
     except:
         return None, None
 
-modelo, scaler = load_assets()[cite: 5]
+# LINHA CORRIGIDA (Removido o texto intruso)
+modelo, scaler = load_assets()
 
 # --- SIDEBAR (CONTROLES) ---
 st.sidebar.title("🛰️ Radar Adaptativo")
@@ -58,7 +59,7 @@ busca_extra = st.sidebar.text_input("Incluir Ativo Extra:").upper().strip()
 
 watchlist = list(ativos_favoritos)
 if busca_extra and busca_extra not in watchlist:
-    watchlist.append(busca_extra)[cite: 8]
+    watchlist.append(busca_extra)
 
 tf_op = st.sidebar.selectbox("Timeframe:", ["1m", "5m", "15m", "1h"], index=0)
 
@@ -69,7 +70,7 @@ if st.sidebar.button("🧠 Deep Scan"):
             yf.download(ativo, period="30d", interval=tf_op, progress=False).to_csv(f"{FOLDER_BRAIN}/{ativo}.csv")
         except: pass
         prog.progress((i + 1) / len(watchlist))
-    st.sidebar.success("Memória IA Atualizada!")[cite: 8, 9]
+    st.sidebar.success("Memória IA Atualizada!")
 
 btn_on = st.sidebar.toggle("🚀 Iniciar Scanner IA", value=False)
 
@@ -82,9 +83,8 @@ st.title("🛰️ IA QUANT - LIVE MARKET")
 col_sinais, col_log = st.columns([1, 1.2])
 
 if 'log_visual' not in st.session_state:
-    st.session_state.log_visual = [][cite: 9]
+    st.session_state.log_visual = []
 
-# --- RENDERIZAÇÃO E PROCESSAMENTO ---
 with col_sinais:
     st.subheader("⚡ Sinais Ativos")
     area_sinais = st.empty()
@@ -97,7 +97,6 @@ if not btn_on:
     area_sinais.warning("Scanner Pausado.")
     area_log.info("Aguardando ativação.")
 else:
-    # Loop de alta frequência[cite: 9, 13, 18]
     while True:
         try:
             for ativo in watchlist:
@@ -136,15 +135,14 @@ else:
                         if not any(x['Ativo'] == ativo and x['Hora'][:5] == info['Hora'][:5] for x in st.session_state.log_visual):
                             st.session_state.log_visual.insert(0, info)
 
-            # Atualização instantânea dos containers[cite: 9, 14, 18]
             with area_sinais.container():
                 for s in st.session_state.log_visual[:8]:
                     st.markdown(f'<div class="signal-card"><b style="font-size:1.1rem;">{s["Ativo"]}</b><br><span style="color:{s["Color"]}; font-weight:bold;">{s["Status"]}</span> | {s["Preço"]}</div>', unsafe_allow_html=True)
 
             with area_log.container():
                 if st.session_state.log_visual:
-                    st.table(pd.DataFrame(st.session_state.log_visual).drop(columns=['Color']))[cite: 9]
+                    st.table(pd.DataFrame(st.session_state.log_visual).drop(columns=['Color']))
             
-            time.sleep(2) # COOLDOWN REDUZIDO PARA 2 SEGUNDOS
+            time.sleep(2) # Cooldown de alta frequência
         except Exception:
             time.sleep(2)
