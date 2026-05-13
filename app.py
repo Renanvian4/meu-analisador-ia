@@ -9,32 +9,29 @@ import os
 from datetime import datetime, timedelta
 
 # --- CONFIGURAÇÃO DE INTERFACE ---
-st.set_page_config(page_title="IA Quant - B3 & Cripto", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="IA Quant - Multi-Ativos", layout="wide", initial_sidebar_state="expanded")
 
-# CSS para ajuste de tela no tablet
+# Estilização para tablet
 st.markdown("""
     <style>
         .main .block-container { max-width: 100%; padding-top: 0.5rem; }
-        [data-testid="stMetricValue"] { font-size: 1.6rem !important; }
         .stDataFrame { font-size: 0.75rem; }
         div.stButton > button:first-child { width: 100%; }
+        .signal-card { border-left: 5px solid #00FF00; padding:10px; background:#1e1e1e; border-radius:5px; margin-bottom:10px; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- MAPEAMENTO DINÂMICO DE ATIVOS ---
-DICIONARIO_ATIVOS = {
+# --- MAPEAMENTO DE ATIVOS BASE ---
+DICIONARIO_BASE = {
     "📊 Futuros B3": ["WIN=F", "WDO=F"],
-    "🚀 Criptomoedas": ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "DOGE-USD", "LINK-USD", "MATIC-USD"],
-    "🇧🇷 Ações B3": ["PETR4.SA", "VALE3.SA", "ITUB4.SA", "BBDC4.SA", "ABEV3.SA", "MGLU3.SA", "B3SA3.SA", "RENT3.SA", "GGBR4.SA"]
+    "🚀 Cripto (Favoritas)": ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "DOGE-USD"],
+    "🇧🇷 Ações B3": ["PETR4.SA", "VALE3.SA", "ITUB4.SA", "BBDC4.SA", "ABEV3.SA"]
 }
 
-# LINHA CORRIGIDA (Sem etiquetas de texto no meio do código)
-TODOS_ATIVOS = [item for sublist in DICIONARIO_ATIVOS.values() for item in sublist]
-
-# --- DIRETÓRIOS DE INTELIGÊNCIA ---
+# --- DIRETÓRIOS ---
 FOLDER_BRAIN = "cerebro_ia_dados"
 if not os.path.exists(FOLDER_BRAIN):
-    os.makedirs(FOLDER_BRAIN)
+    os.makedirs(FOLDER_BRAIN)[cite: 3]
 
 # --- CARREGAMENTO DE MODELOS ---
 @st.cache_resource
@@ -54,79 +51,80 @@ def load_assets():
     except:
         return None, None
 
-modelo, scaler = load_assets()
+modelo, scaler = load_assets()[cite: 3]
 
-# --- MOTOR DE APRENDIZADO NATIVO (DEEP SCAN) ---
+# --- MOTOR DE DEEP SCAN ---
 def executar_deep_scan(selecionados):
     timeframes = {"1m": "7d", "5m": "30d", "15m": "60d", "1h": "120d"}
-    progresso_sidebar = st.sidebar.progress(0)
-    total_tasks = len(selecionados) * len(timeframes)
+    prog = st.sidebar.progress(0)
+    total = len(selecionados) * len(timeframes)
     count = 0
-    
     for ativo in selecionados:
         for tf_nome, periodo in timeframes.items():
             count += 1
-            path = f"{FOLDER_BRAIN}/brain_{ativo}_{tf_nome}.csv"
             try:
                 hist = yf.download(ativo, period=periodo, interval=tf_nome, progress=False)
-                if hist.empty or len(hist) < 50: continue
-                
-                close = hist['Close'].values.flatten()
-                ema200 = pd.Series(close).ewm(span=200, adjust=False).mean()
-                dist = (close - ema200) / ema200
-                
-                estudo = [[round(dist[i], 4), 1 if close[i+5] > close[i] else 0] for i in range(50, len(close) - 5)]
-                if estudo:
-                    pd.DataFrame(estudo).to_csv(path, index=False, header=False)
-            except:
-                continue
-            progresso_sidebar.progress(count / total_tasks)
+                if not hist.empty:
+                    close = hist['Close'].values.flatten()
+                    ema = pd.Series(close).ewm(span=200, adjust=False).mean()
+                    dist = (close - ema) / ema
+                    df_p = pd.DataFrame([[dist[i], 1 if close[i+5] > close[i] else 0] for i in range(50, len(close)-5)])
+                    df_p.to_csv(f"{FOLDER_BRAIN}/brain_{ativo}_{tf_nome}.csv", index=False, header=False)
+            except: pass
+            prog.progress(count / total)[cite: 3]
 
-# --- INTERFACE LATERAL (SIDEBAR) ---
+# --- SIDEBAR (COM BUSCA LIVRE) ---
 st.sidebar.title("🛰️ Radar Adaptativo")
 
-categoria = st.sidebar.selectbox("Filtrar Categoria:", list(DICIONARIO_ATIVOS.keys()))
-ativos_sugeridos = DICIONARIO_ATIVOS[categoria]
+# 1. Seleção de Favoritos
+cat = st.sidebar.selectbox("Filtrar Categoria:", list(DICIONARIO_BASE.keys()))
+ativos_favoritos = st.sidebar.multiselect("Favoritos:", DICIONARIO_BASE[cat], default=DICIONARIO_BASE[cat][:2])
 
-ativos_selecionados = st.sidebar.multiselect(
-    "Ativos para Monitorar:", 
-    options=TODOS_ATIVOS, 
-    default=ativos_sugeridos[:2]
-)
+# 2. BUSCA LIVRE (Para incluir QUALQUER Cripto)
+st.sidebar.markdown("---")
+busca_extra = st.sidebar.text_input("Incluir Cripto Extra (ex: ADA-USD, SHIB-USD):").upper()
 
-tf_op = st.sidebar.selectbox("Timeframe de Análise", ["1m", "5m", "15m", "1h"], index=1)
+# Consolidação da Watchlist
+ativos_sel = ativos_favoritos
+if busca_extra:
+    if busca_extra not in ativos_sel:
+        ativos_sel.append(busca_extra)
 
-if st.sidebar.button("🧠 Deep Scan (Estudar Histórico)"):
-    if ativos_selecionados:
-        executar_deep_scan(ativos_selecionados)
-        st.sidebar.success("Memória Blindada Atualizada!")
-    else:
-        st.sidebar.warning("Selecione ativos primeiro.")
+tf_op = st.sidebar.selectbox("Timeframe:", ["1m", "5m", "15m", "1h"], index=1)[cite: 3]
 
-btn_ativo = st.sidebar.toggle("🚀 Ativar Scanner em Tempo Real", value=True)
+if st.sidebar.button("🧠 Deep Scan (Estudar Todos Selecionados)"):
+    if ativos_sel:
+        executar_deep_scan(ativos_sel)
+        st.sidebar.success("Memória Atualizada!")[cite: 3]
 
+btn_on = st.sidebar.toggle("🚀 Scanner em Tempo Real", value=True)
 if st.sidebar.button("🗑️ Limpar Log Visual"):
     st.session_state.log_visual = []
-    st.rerun()
+    st.rerun()[cite: 3]
 
-# --- INTERFACE PRINCIPAL ---
+# --- LAYOUT PRINCIPAL ---
 st.title("IA QUANT - LIVE MARKET")
-col_sinais, col_log = st.columns([1, 1.2])
+col_sinais, col_log = st.columns([1, 1.2])[cite: 3]
 
 if 'log_visual' not in st.session_state:
     st.session_state.log_visual = []
 
-placeholder_sinais = col_sinais.empty()
-placeholder_log = col_log.empty()
+with col_sinais:
+    st.subheader("⚡ Sinais")
+    area_sinais = st.empty()
+
+with col_log:
+    st.subheader("📜 Auditoria")
+    area_log = st.empty()[cite: 3]
 
 # --- LOOP DE PROCESSAMENTO ---
-if btn_ativo and modelo is not None and ativos_selecionados:
+if btn_on and modelo is not None and ativos_sel:
     while True:
         try:
-            dados = yf.download(ativos_selecionados, period="2d", interval=tf_op, progress=False, group_by='ticker')
+            dados = yf.download(ativos_sel, period="2d", interval=tf_op, progress=False, group_by='ticker')
             
-            for ativo in ativos_selecionados:
-                df = dados[ativo] if len(ativos_selecionados) > 1 else dados
+            for ativo in ativos_sel:
+                df = dados[ativo] if len(ativos_sel) > 1 else dados
                 if df.empty or len(df) < 5: continue
                 
                 c = df['Close'].iloc[-1]
@@ -136,26 +134,17 @@ if btn_ativo and modelo is not None and ativos_selecionados:
                 info = {"Ativo": ativo, "Hora": datetime.now().strftime("%H:%M:%S"), "Preço": f"{c:.2f}", "Tipo": tipo}
                 
                 if not any(x['Ativo'] == ativo and x['Hora'] == info['Hora'] for x in st.session_state.log_visual):
-                    st.session_state.log_visual.insert(0, info)
+                    st.session_state.log_visual.insert(0, info)[cite: 3]
 
-            # Quadro de Sinais (Esquerda)
-            with placeholder_sinais.container():
-                st.subheader("⚡ Sinais")
+            with area_sinais.container():
                 for s in st.session_state.log_visual[:6]:
                     cor = "#00FF00" if s['Tipo'] == "COMPRA" else "#FF4B4B"
-                    st.markdown(f"""
-                        <div style="border-left: 5px solid {cor}; padding:10px; background:#1e1e1e; border-radius:5px; margin-bottom:10px;">
-                            <b style="color:white; font-size:1.1rem;">{s['Ativo']}</b><br>
-                            <span style="color:{cor}; font-weight:bold;">{s['Tipo']}</span> @ {s['Preço']}
-                        </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(f'<div class="signal-card" style="border-left-color:{cor}"><b>{s["Ativo"]}</b><br><span style="color:{cor}">{s["Tipo"]}</span> @ {s["Preço"]}</div>', unsafe_allow_html=True)
 
-            # Quadro de Log (Direita)
-            with placeholder_log.container():
-                st.subheader("📜 Auditoria de Sinais")
+            with area_log.container():
                 if st.session_state.log_visual:
-                    st.dataframe(pd.DataFrame(st.session_state.log_visual), use_container_width=True, hide_index=True)
+                    st.dataframe(pd.DataFrame(st.session_state.log_visual), use_container_width=True, hide_index=True)[cite: 3]
 
-            time.sleep(15)
-        except Exception:
+            time.sleep(10)
+        except:
             time.sleep(5)
