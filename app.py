@@ -92,7 +92,9 @@ if st.sidebar.button("🧠 Deep Scan (Estudar Selecionados)"):
         executar_deep_scan(ativos_sel)
         st.sidebar.success("Memória Atualizada!")
 
-btn_on = st.sidebar.toggle("🚀 Scanner em Tempo Real", value=True)
+# SOLUÇÃO: Scanner inicia DESATIVADO (value=False)
+btn_on = st.sidebar.toggle("🚀 Scanner em Tempo Real", value=False)
+
 if st.sidebar.button("Limpar Log Visual"):
     st.session_state.log_visual = []
     st.rerun()
@@ -112,11 +114,15 @@ with col_log:
     st.subheader("📜 Auditoria")
     area_log = st.empty()
 
-# --- LOOP DE EXECUÇÃO (EXIBIÇÃO IMEDIATA) ---
+# --- LOOP DE EXECUÇÃO ---
 if btn_on and modelo is not None and ativos_sel:
+    # Mostra mensagem de processamento inicial
+    area_sinais.info("Iniciando monitoramento da API...")
+    
     while True:
         try:
             for ativo in ativos_sel:
+                # Download de dados atualizados
                 d = yf.download(ativo, period="2d", interval=tf_op, progress=False)
                 if d.empty: continue
                 
@@ -131,9 +137,11 @@ if btn_on and modelo is not None and ativos_sel:
                     "Tipo": tipo_s
                 }
                 
+                # Validação para registro de sinais únicos
                 if not any(x['Ativo'] == ativo and x['Hora'][:5] == info['Hora'][:5] for x in st.session_state.log_visual):
                     st.session_state.log_visual.insert(0, info)
 
+                # Atualização forçada dos campos centrais[cite: 7]
                 with area_sinais.container():
                     for s in st.session_state.log_visual[:6]:
                         cor = "#00FF00" if s['Tipo'] == "COMPRA" else "#FF4B4B"
@@ -143,6 +151,9 @@ if btn_on and modelo is not None and ativos_sel:
                     if st.session_state.log_visual:
                         st.dataframe(pd.DataFrame(st.session_state.log_visual), use_container_width=True, hide_index=True)
 
+            time.sleep(10) # Intervalo para evitar bloqueio de IP da API
+        except Exception:
             time.sleep(5)
-        except:
-            time.sleep(2)
+elif not btn_on:
+    area_sinais.warning("Scanner pausado. Ative na barra lateral para ver os sinais.")
+    area_log.info("Aguardando ativação para registrar sinais.")
