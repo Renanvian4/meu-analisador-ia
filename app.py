@@ -9,7 +9,7 @@ import os
 from datetime import datetime, timedelta
 
 # --- CONFIGURAÇÃO DE INTERFACE ---
-st.set_page_config(page_title="IA Analitica - Multi-Ativos", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="IA Analítica Pro", layout="wide", initial_sidebar_state="expanded")
 
 # Estilização para tablet
 st.markdown("""
@@ -24,7 +24,7 @@ st.markdown("""
 # --- CONFIGURAÇÃO DE DIRETÓRIOS ---
 FOLDER_BRAIN = "cerebro_ia_dados"
 if not os.path.exists(FOLDER_BRAIN):
-    os.makedirs(FOLDER_BRAIN)[cite: 5]
+    os.makedirs(FOLDER_BRAIN)
 
 # --- CARREGAMENTO DE MODELOS ---
 @st.cache_resource
@@ -44,7 +44,7 @@ def load_assets():
     except:
         return None, None
 
-modelo, scaler = load_assets()[cite: 5]
+modelo, scaler = load_assets()
 
 # --- MOTOR DE APRENDIZADO (DEEP SCAN) ---
 def executar_deep_scan(selecionados):
@@ -64,9 +64,9 @@ def executar_deep_scan(selecionados):
                     df_p = pd.DataFrame([[dist[i], 1 if close[i+5] > close[i] else 0] for i in range(50, len(close)-5)])
                     df_p.to_csv(f"{FOLDER_BRAIN}/brain_{ativo}_{tf_nome}.csv", index=False, header=False)
             except: pass
-            prog.progress(count / total)[cite: 5]
+            prog.progress(count / total)
 
-# --- SIDEBAR ---
+# --- SIDEBAR (CONTROLES) ---
 st.sidebar.title("🛰️ Radar Adaptativo")
 
 DICIONARIO_BASE = {
@@ -79,45 +79,43 @@ cat = st.sidebar.selectbox("Filtrar Categoria:", list(DICIONARIO_BASE.keys()))
 favoritos = st.sidebar.multiselect("Favoritos:", DICIONARIO_BASE[cat], default=DICIONARIO_BASE[cat][:2])
 
 # Campo de Busca para qualquer Cripto
-busca_extra = st.sidebar.text_input("Incluir Cripto Extra:").upper().strip()
+busca_extra = st.sidebar.text_input("Incluir Cripto Extra (Ticker API):").upper().strip()
 
 ativos_sel = list(favoritos)
 if busca_extra and busca_extra not in ativos_sel:
-    ativos_sel.append(busca_extra)[cite: 5]
+    ativos_sel.append(busca_extra)
 
 tf_op = st.sidebar.selectbox("Timeframe:", ["1m", "5m", "15m", "1h"], index=1)
 
 if st.sidebar.button("🧠 Deep Scan (Estudar Selecionados)"):
     if ativos_sel:
         executar_deep_scan(ativos_sel)
-        st.sidebar.success("Memória Atualizada!")[cite: 5]
+        st.sidebar.success("Memória Atualizada!")
 
 btn_on = st.sidebar.toggle("🚀 Scanner em Tempo Real", value=True)
-if st.sidebar.button("🗑️ Limpar Log Visual"):
+if st.sidebar.button("Limpar Log Visual"):
     st.session_state.log_visual = []
     st.rerun()
 
-# --- LAYOUT PRINCIPAL (RESTAURADO) ---
-st.title("IA ANALITICA - LIVE MARKET")
-col_sinais, col_log = st.columns([1, 1.2])[cite: 5]
+# --- LAYOUT PRINCIPAL ---
+st.title("IA QUANT - LIVE MARKET")
+col_sinais, col_log = st.columns([1, 1.2])
 
 if 'log_visual' not in st.session_state:
     st.session_state.log_visual = []
 
-# Espaços fixos para evitar que o layout "suma"
 with col_sinais:
     st.subheader("⚡ Sinais")
     area_sinais = st.empty()
 
 with col_log:
-    st.subheader("📜 Histórico")
-    area_log = st.empty()[cite: 5]
+    st.subheader("📜 Auditoria")
+    area_log = st.empty()
 
-# --- LOOP DE EXECUÇÃO (CORREÇÃO DE EXIBIÇÃO) ---
+# --- LOOP DE EXECUÇÃO (EXIBIÇÃO IMEDIATA) ---
 if btn_on and modelo is not None and ativos_sel:
     while True:
         try:
-            # Processamento individual para exibição imediata
             for ativo in ativos_sel:
                 d = yf.download(ativo, period="2d", interval=tf_op, progress=False)
                 if d.empty: continue
@@ -133,11 +131,9 @@ if btn_on and modelo is not None and ativos_sel:
                     "Tipo": tipo_s
                 }
                 
-                # Adiciona ao log apenas se for novo[cite: 5]
                 if not any(x['Ativo'] == ativo and x['Hora'][:5] == info['Hora'][:5] for x in st.session_state.log_visual):
                     st.session_state.log_visual.insert(0, info)
 
-                # Atualiza a tela a cada ativo processado[cite: 5]
                 with area_sinais.container():
                     for s in st.session_state.log_visual[:6]:
                         cor = "#00FF00" if s['Tipo'] == "COMPRA" else "#FF4B4B"
@@ -147,6 +143,6 @@ if btn_on and modelo is not None and ativos_sel:
                     if st.session_state.log_visual:
                         st.dataframe(pd.DataFrame(st.session_state.log_visual), use_container_width=True, hide_index=True)
 
-            time.sleep(5) # Intervalo menor para maior fluidez[cite: 5]
+            time.sleep(5)
         except:
             time.sleep(2)
