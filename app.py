@@ -9,7 +9,7 @@ import os
 from datetime import datetime, timedelta
 
 # --- CONFIGURAÇÃO DE INTERFACE ---
-st.set_page_config(page_title="IA Quant - Multi-Ativos", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="IA Analitico - Multi-Ativos", layout="wide", initial_sidebar_state="expanded")
 
 # Estilização para tablet
 st.markdown("""
@@ -31,7 +31,7 @@ DICIONARIO_BASE = {
 # --- DIRETÓRIOS ---
 FOLDER_BRAIN = "cerebro_ia_dados"
 if not os.path.exists(FOLDER_BRAIN):
-    os.makedirs(FOLDER_BRAIN)[cite: 3]
+    os.makedirs(FOLDER_BRAIN)
 
 # --- CARREGAMENTO DE MODELOS ---
 @st.cache_resource
@@ -51,7 +51,7 @@ def load_assets():
     except:
         return None, None
 
-modelo, scaler = load_assets()[cite: 3]
+modelo, scaler = load_assets()
 
 # --- MOTOR DE DEEP SCAN ---
 def executar_deep_scan(selecionados):
@@ -71,40 +71,39 @@ def executar_deep_scan(selecionados):
                     df_p = pd.DataFrame([[dist[i], 1 if close[i+5] > close[i] else 0] for i in range(50, len(close)-5)])
                     df_p.to_csv(f"{FOLDER_BRAIN}/brain_{ativo}_{tf_nome}.csv", index=False, header=False)
             except: pass
-            prog.progress(count / total)[cite: 3]
+            prog.progress(count / total)
 
-# --- SIDEBAR (COM BUSCA LIVRE) ---
+# --- SIDEBAR (BUSCA LIVRE DE CRIPTOS) ---
 st.sidebar.title("🛰️ Radar Adaptativo")
 
-# 1. Seleção de Favoritos
 cat = st.sidebar.selectbox("Filtrar Categoria:", list(DICIONARIO_BASE.keys()))
 ativos_favoritos = st.sidebar.multiselect("Favoritos:", DICIONARIO_BASE[cat], default=DICIONARIO_BASE[cat][:2])
 
-# 2. BUSCA LIVRE (Para incluir QUALQUER Cripto)
 st.sidebar.markdown("---")
-busca_extra = st.sidebar.text_input("Incluir Cripto Extra (ex: ADA-USD, SHIB-USD):").upper()
+# Campo para digitar QUALQUER cripto (ex: ADA-USD, SHIB-USD, AVAX-USD)
+busca_extra = st.sidebar.text_input("Incluir Cripto Extra (Ticker API):").upper().strip()
 
-# Consolidação da Watchlist
-ativos_sel = ativos_favoritos
+# Consolidação da lista de monitoramento
+ativos_sel = list(ativos_favoritos)
 if busca_extra:
     if busca_extra not in ativos_sel:
         ativos_sel.append(busca_extra)
 
-tf_op = st.sidebar.selectbox("Timeframe:", ["1m", "5m", "15m", "1h"], index=1)[cite: 3]
+tf_op = st.sidebar.selectbox("Timeframe:", ["1m", "5m", "15m", "1h"], index=1)
 
-if st.sidebar.button("🧠 Deep Scan (Estudar Todos Selecionados)"):
+if st.sidebar.button("🧠 Deep Scan (Estudar Selecionados)"):
     if ativos_sel:
         executar_deep_scan(ativos_sel)
-        st.sidebar.success("Memória Atualizada!")[cite: 3]
+        st.sidebar.success("Memória Atualizada!")
 
 btn_on = st.sidebar.toggle("🚀 Scanner em Tempo Real", value=True)
 if st.sidebar.button("🗑️ Limpar Log Visual"):
     st.session_state.log_visual = []
-    st.rerun()[cite: 3]
+    st.rerun()
 
 # --- LAYOUT PRINCIPAL ---
 st.title("IA QUANT - LIVE MARKET")
-col_sinais, col_log = st.columns([1, 1.2])[cite: 3]
+col_sinais, col_log = st.columns([1, 1.2])
 
 if 'log_visual' not in st.session_state:
     st.session_state.log_visual = []
@@ -115,7 +114,7 @@ with col_sinais:
 
 with col_log:
     st.subheader("📜 Auditoria")
-    area_log = st.empty()[cite: 3]
+    area_log = st.empty()
 
 # --- LOOP DE PROCESSAMENTO ---
 if btn_on and modelo is not None and ativos_sel:
@@ -134,7 +133,7 @@ if btn_on and modelo is not None and ativos_sel:
                 info = {"Ativo": ativo, "Hora": datetime.now().strftime("%H:%M:%S"), "Preço": f"{c:.2f}", "Tipo": tipo}
                 
                 if not any(x['Ativo'] == ativo and x['Hora'] == info['Hora'] for x in st.session_state.log_visual):
-                    st.session_state.log_visual.insert(0, info)[cite: 3]
+                    st.session_state.log_visual.insert(0, info)
 
             with area_sinais.container():
                 for s in st.session_state.log_visual[:6]:
@@ -143,7 +142,7 @@ if btn_on and modelo is not None and ativos_sel:
 
             with area_log.container():
                 if st.session_state.log_visual:
-                    st.dataframe(pd.DataFrame(st.session_state.log_visual), use_container_width=True, hide_index=True)[cite: 3]
+                    st.dataframe(pd.DataFrame(st.session_state.log_visual), use_container_width=True, hide_index=True)
 
             time.sleep(10)
         except:
