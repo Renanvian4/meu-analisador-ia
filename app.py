@@ -5,12 +5,12 @@ import numpy as np
 import tensorflow as tf
 import pickle
 import os
-import time
 from datetime import datetime
 
 # --- CONFIGURAÇÃO DE INTERFACE ---
 st.set_page_config(page_title="IA Quant - Radar", layout="wide", initial_sidebar_state="expanded")
 
+# Estilização otimizada para Tablet
 st.markdown("""
     <style>
         .main .block-container { max-width: 100%; padding-top: 0.5rem; }
@@ -44,7 +44,7 @@ def load_assets():
 
 modelo, scaler = load_assets()
 
-# --- SIDEBAR ---
+# --- SIDEBAR (CONTROLES) ---
 st.sidebar.title("🛰️ Radar Adaptativo")
 
 DICIONARIO_BASE = {
@@ -77,77 +77,77 @@ if st.sidebar.button("🗑️ Limpar Histórico"):
     st.session_state.log_visual = []
     st.rerun()
 
-# --- LAYOUT PRINCIPAL PERSISTENTE ---
+# --- LAYOUT PRINCIPAL ---
 st.title("🛰️ IA QUANT - LIVE MARKET ADAPTIVE")
 col_sinais, col_log = st.columns([1, 1.2])
 
 if 'log_visual' not in st.session_state:
     st.session_state.log_visual = []
 
-# RESERVA DOS QUADROS (Eles nunca somem agora)
-with col_sinais:
-    st.subheader("⚡ Sinais Ativos")
-    area_sinais = st.empty()
-
-with col_log:
-    st.subheader("📜 Auditoria de Sinais")
-    area_log = st.empty()
-
-# --- LOGICA DE EXIBIÇÃO ---
+# --- EXECUÇÃO POR CICLO (RESOLVE CONGELAMENTO) ---
 if not btn_on:
-    area_sinais.warning("Scanner Pausado. Ative para iniciar.")
-    area_log.info("Aguardando ativação.")
+    with col_sinais:
+        st.subheader("⚡ Sinais Ativos")
+        st.warning("Scanner Pausado. Ative para iniciar.")
+    with col_log:
+        st.subheader("📜 Auditoria de Sinais")
+        st.info("Aguardando ativação.")
 else:
-    # Enquanto o scanner roda, ele preenche os espaços reservados[cite: 9, 14]
-    while True:
+    # Processamento dos Ativos
+    for ativo in watchlist:
         try:
-            for ativo in watchlist:
-                df = yf.download(ativo, period="7d", interval=tf_op, progress=False)
-                if df.empty or len(df) < 50: continue
-                if isinstance(df.columns, pd.MultiIndex): 
-                    df.columns = df.columns.get_level_values(0)
-                
-                # Cálculo dos Indicadores IA
-                df['RSI'] = 100 - (100 / (1 + df['Close'].diff().gt(0).rolling(14).mean() / df['Close'].diff().lt(0).rolling(14).mean()))
-                df['EMA_200'] = df['Close'].ewm(span=200, adjust=False).mean()
-                df['Dist_EMA'] = (df['Close'] - df['EMA_200']) / df['EMA_200']
-                df['Vol_ZScore'] = (df['Volume'] - df['Volume'].rolling(20).mean()) / df['Volume'].rolling(20).std()
-                pavio = df['High'] - df['Low']
-                df['Forca_Corpo'] = np.where(pavio > 0, abs(df['Close'] - df['Open']) / pavio, 0)
-                
-                df_clean = df.dropna(subset=['RSI', 'Dist_EMA', 'Vol_ZScore', 'Forca_Corpo'])
-                
-                if not df_clean.empty:
-                    features = ['RSI', 'Dist_EMA', 'Vol_ZScore', 'Forca_Corpo']
-                    input_scaled = scaler.transform(df_clean[features].iloc[-1:].values)
-                    preds = modelo.predict(input_scaled, verbose=0)[0]
-                    
-                    prob_venda, prob_compra = preds[1], preds[2]
-                    status, cor = "⏳ Neutro", "white"
-                    
-                    if prob_compra > 0.55: status, cor = "🚀 COMPRA", "#00FF00"
-                    elif prob_venda > 0.55: status, cor = "📉 VENDA", "#FF4B4B"
-                    
-                    if status != "⏳ Neutro":
-                        info = {
-                            "Ativo": ativo, "Hora": datetime.now().strftime("%H:%M:%S"), 
-                            "Preço": f"{df_clean['Close'].iloc[-1]:.2f}", 
-                            "Status": status, "Confiança": f"{max(prob_compra, prob_venda)*100:.1f}%", "Color": cor
-                        }
-                        if not any(x['Ativo'] == ativo and x['Hora'][:5] == info['Hora'][:5] for x in st.session_state.log_visual):
-                            st.session_state.log_visual.insert(0, info)
-
-                # ATUALIZAÇÃO IMEDIATA DENTRO DO LOOP
-                with area_sinais.container():
-                    if not st.session_state.log_visual:
-                        st.info("Buscando sinais na API... Aguarde.")
-                    for s in st.session_state.log_visual[:6]:
-                        st.markdown(f'<div class="signal-card"><h3 style="margin:0;">{s["Ativo"]}</h3><h2 style="color:{s["Color"]}; margin:5px 0;">{s["Status"]}</h2><p style="margin:0;">Preço: {s["Preço"]} | {s["Confiança"]}</p></div>', unsafe_allow_html=True)
-
-                with area_log.container():
-                    if st.session_state.log_visual:
-                        st.table(pd.DataFrame(st.session_state.log_visual).drop(columns=['Color']))
+            df = yf.download(ativo, period="7d", interval=tf_op, progress=False)
+            if df.empty or len(df) < 50: continue
+            if isinstance(df.columns, pd.MultiIndex): 
+                df.columns = df.columns.get_level_values(0)
             
-            time.sleep(10)
-        except:
-            time.sleep(5)
+            # Cálculos IA (4 Indicadores)
+            df['RSI'] = 100 - (100 / (1 + df['Close'].diff().gt(0).rolling(14).mean() / df['Close'].diff().lt(0).rolling(14).mean()))
+            df['EMA_200'] = df['Close'].ewm(span=200, adjust=False).mean()
+            df['Dist_EMA'] = (df['Close'] - df['EMA_200']) / df['EMA_200']
+            df['Vol_ZScore'] = (df['Volume'] - df['Volume'].rolling(20).mean()) / df['Volume'].rolling(20).std()
+            pavio = df['High'] - df['Low']
+            df['Forca_Corpo'] = np.where(pavio > 0, abs(df['Close'] - df['Open']) / pavio, 0)
+            
+            df_clean = df.dropna(subset=['RSI', 'Dist_EMA', 'Vol_ZScore', 'Forca_Corpo'])
+            
+            if not df_clean.empty and modelo is not None:
+                features = ['RSI', 'Dist_EMA', 'Vol_ZScore', 'Forca_Corpo']
+                input_scaled = scaler.transform(df_clean[features].iloc[-1:].values)
+                preds = modelo.predict(input_scaled, verbose=0)[0]
+                
+                prob_venda, prob_compra = preds[1], preds[2]
+                status, cor = "⏳ Neutro", "white"
+                
+                if prob_compra > 0.55: status, cor = "🚀 COMPRA", "#00FF00"
+                elif prob_venda > 0.55: status, cor = "📉 VENDA", "#FF4B4B"
+                
+                if status != "⏳ Neutro":
+                    info = {
+                        "Ativo": ativo, "Hora": datetime.now().strftime("%H:%M:%S"), 
+                        "Preço": f"{df_clean['Close'].iloc[-1]:.2f}", 
+                        "Status": status, "Confiança": f"{max(prob_compra, prob_venda)*100:.1f}%", "Color": cor
+                    }
+                    if not any(x['Ativo'] == ativo and x['Hora'][:5] == info['Hora'][:5] for x in st.session_state.log_visual):
+                        st.session_state.log_visual.insert(0, info)
+        except: pass
+
+    # Exibição dos Sinais
+    with col_sinais:
+        st.subheader("⚡ Sinais Ativos")
+        if not st.session_state.log_visual:
+            st.info("Varrendo mercado... Próxima atualização em instantes.")
+        for s in st.session_state.log_visual[:6]:
+            st.markdown(f'<div class="signal-card"><h3 style="margin:0;">{s["Ativo"]}</h3><h2 style="color:{s["Color"]}; margin:5px 0;">{s["Status"]}</h2><p style="margin:0;">Preço: {s["Preço"]} | {s["Confiança"]}</p></div>', unsafe_allow_html=True)
+
+    # Exibição da Auditoria
+    with col_log:
+        st.subheader("📜 Auditoria de Sinais")
+        if st.session_state.log_visual:
+            st.table(pd.DataFrame(st.session_state.log_visual).drop(columns=['Color']))
+
+    # AGENDAMENTO AUTOMÁTICO (Substitui o loop travado)
+    st.info(f"🔄 Última varredura: {datetime.now().strftime('%H:%M:%S')}. Reiniciando em 20s...")
+    import time
+    time.sleep(20)
+    st.rerun()
