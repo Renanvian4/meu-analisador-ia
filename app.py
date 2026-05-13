@@ -52,8 +52,7 @@ DICIONARIO_BASE = {
 }
 
 cat = st.sidebar.selectbox("Filtrar Categoria:", list(DICIONARIO_BASE.keys()))
-ativos_base = DICIONARIO_BASE[cat]
-ativos_sel = st.sidebar.multiselect("Favoritos:", ativos_base, default=ativos_base[:2])
+ativos_sel = st.sidebar.multiselect("Favoritos:", DICIONARIO_BASE[cat], default=DICIONARIO_BASE[cat][:2])
 busca_extra = st.sidebar.text_input("Incluir Ativo Extra (Ticker API):").upper().strip()
 
 watchlist = list(ativos_sel)
@@ -62,7 +61,6 @@ if busca_extra and busca_extra not in watchlist:
 
 tf_op = st.sidebar.selectbox("Timeframe:", ["1m", "5m", "15m", "1h"], index=1)
 
-# Botão Deep Scan
 if st.sidebar.button("🧠 Deep Scan (Aprendizado Profundo)"):
     prog = st.sidebar.progress(0)
     for i, ativo in enumerate(watchlist):
@@ -78,18 +76,36 @@ if st.sidebar.button("🗑️ Limpar Histórico"):
     st.session_state.log_visual = []
     st.rerun()
 
-# --- LAYOUT PRINCIPAL ---
+# --- LAYOUT FIXO (RESOLVE O VAZIO DA IMAGEM 1000000250.PNG) ---
 st.title("🛰️ IA QUANT - LIVE MARKET ADAPTIVE")
 col_sinais, col_log = st.columns([1, 1.2])
 
 if 'log_visual' not in st.session_state:
     st.session_state.log_visual = []
 
-# --- LÓGICA DE PROCESSAMENTO (SEM LOOP INFINITO) ---
+# Criamos os containers antes de qualquer processamento[cite: 7, 9]
+with col_sinais:
+    st.subheader("⚡ Sinais Ativos")
+    area_sinais = st.empty()
+
+with col_log:
+    st.subheader("📜 Auditoria de Sinais")
+    area_log = st.empty()
+
+# --- PROCESSAMENTO ---
 if btn_on and modelo is not None and watchlist:
-    # AUTO-REFRESH: Atualiza a página a cada 15 segundos para evitar congelamento
-    st.empty() 
-    
+    # Exibe os sinais que já existem no log enquanto carrega os novos
+    with area_sinais.container():
+        if not st.session_state.log_visual:
+            st.info("Buscando dados na API... Aguarde 10 segundos.")
+        for s in st.session_state.log_visual[:6]:
+            st.markdown(f'<div class="signal-card"><h3 style="margin:0;">{s["Ativo"]}</h3><h2 style="color:{s["Color"]}; margin:5px 0;">{s["Status"]}</h2><p style="margin:0;">Preço: {s["Preço"]} | {s["Confiança"]}</p></div>', unsafe_allow_html=True)
+
+    with area_log.container():
+        if st.session_state.log_visual:
+            st.table(pd.DataFrame(st.session_state.log_visual).drop(columns=['Color']))
+
+    # Executa a varredura atual
     for ativo in watchlist:
         try:
             df = yf.download(ativo, period="7d", interval=tf_op, progress=False)
@@ -97,7 +113,7 @@ if btn_on and modelo is not None and watchlist:
             if isinstance(df.columns, pd.MultiIndex): 
                 df.columns = df.columns.get_level_values(0)
             
-            # Cálculo dos Indicadores IA
+            # Cálculos IA
             df['RSI'] = 100 - (100 / (1 + df['Close'].diff().gt(0).rolling(14).mean() / df['Close'].diff().lt(0).rolling(14).mean()))
             df['EMA_200'] = df['Close'].ewm(span=200, adjust=False).mean()
             df['Dist_EMA'] = (df['Close'] - df['EMA_200']) / df['EMA_200']
@@ -126,30 +142,15 @@ if btn_on and modelo is not None and watchlist:
                     }
                     if not any(x['Ativo'] == ativo and x['Hora'][:5] == info['Hora'][:5] for x in st.session_state.log_visual):
                         st.session_state.log_visual.insert(0, info)
+                        st.rerun() # Atualiza a tela assim que encontra um sinal novo[cite: 9]
         except: pass
 
-    # Exibição dos Sinais
-    with col_sinais:
-        st.subheader("⚡ Sinais Ativos")
-        for s in st.session_state.log_visual[:6]:
-            st.markdown(f'<div class="signal-card"><h3 style="margin:0;">{s["Ativo"]}</h3><h2 style="color:{s["Color"]}; margin:5px 0;">{s["Status"]}</h2><p style="margin:0;">Preço: {s["Preço"]} | {s["Confiança"]}</p></div>', unsafe_allow_html=True)
-
-    # Exibição da Auditoria
-    with col_log:
-        st.subheader("📜 Auditoria de Sinais")
-        if st.session_state.log_visual:
-            st.table(pd.DataFrame(st.session_state.log_visual).drop(columns=['Color']))
-
-    # Comando para recarregar em 15 segundos sem travar o navegador[cite: 9]
-    st.info("🔄 Próxima varredura em 15 segundos...")
+    # Agenda a próxima atualização
+    st.info("🔄 Aguardando 15 segundos para nova varredura...")
     import time
     time.sleep(15)
     st.rerun()
 
 elif not btn_on:
-    with col_sinais:
-        st.subheader("⚡ Sinais Ativos")
-        st.warning("Scanner Pausado na lateral.")
-    with col_log:
-        st.subheader("📜 Auditoria de Sinais")
-        st.info("Aguardando ativação.")
+    area_sinais.warning("Scanner Pausado. Ative para iniciar.")
+    area_log.info("Aguardando ativação.")
