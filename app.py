@@ -11,6 +11,7 @@ from datetime import datetime
 # --- CONFIGURAÇÃO DE INTERFACE ---
 st.set_page_config(page_title="IA Quant - Radar", layout="wide", initial_sidebar_state="expanded")
 
+# Estilização para tablet
 st.markdown("""
     <style>
         .main .block-container { max-width: 100%; padding-top: 0.5rem; }
@@ -22,13 +23,14 @@ st.markdown("""
 
 # --- DIRETÓRIOS E ASSETS ---
 FOLDER_BRAIN = "cerebro_ia_dados"
-if not os.path.exists(FOLDER_BRAIN): 
-    os.makedirs(FOLDER_BRAIN)[cite: 5]
+if not os.path.exists(FOLDER_BRAIN):
+    os.makedirs(FOLDER_BRAIN)
 
 @st.cache_resource
 def load_assets():
     try:
-        with open('scaler.pkl', 'rb') as f: s = pickle.load(f)
+        with open('scaler.pkl', 'rb') as f:
+            s = pickle.load(f)
         m = tf.keras.models.Sequential([
             tf.keras.layers.Input(shape=(4,)), 
             tf.keras.layers.Dense(64, activation='relu'),
@@ -38,11 +40,12 @@ def load_assets():
         ])
         m.load_weights('modelo_pesos.weights.h5')
         return m, s
-    except: return None, None
+    except:
+        return None, None
 
-modelo, scaler = load_assets()[cite: 5]
+modelo, scaler = load_assets()
 
-# --- SIDEBAR (CONTROLES COMPLETOS) ---
+# --- SIDEBAR (CONTROLES) ---
 st.sidebar.title("🛰️ Radar Adaptativo")
 
 DICIONARIO_BASE = {
@@ -51,30 +54,30 @@ DICIONARIO_BASE = {
 }
 
 cat = st.sidebar.selectbox("Filtrar Categoria:", list(DICIONARIO_BASE.keys()))
-ativos_base = DICIONARIO_BASE[cat]
-ativos_sel = st.sidebar.multiselect("Favoritos:", ativos_base, default=ativos_base[:2])
+favoritos = st.sidebar.multiselect("Favoritos:", DICIONARIO_BASE[cat], default=DICIONARIO_BASE[cat][:2])
 
-# Campo de Busca Livre
+# Campo de busca para qualquer cripto extra
 busca_extra = st.sidebar.text_input("Incluir Ativo Extra (Ticker API):").upper().strip()
 
-watchlist = list(ativos_sel)
-if busca_extra and busca_extra not in watchlist: 
+watchlist = list(favoritos)
+if busca_extra and busca_extra not in watchlist:
     watchlist.append(busca_extra)
 
 tf_op = st.sidebar.selectbox("Timeframe:", ["1m", "5m", "15m", "1h"], index=1)
 
-# Botão Deep Scan[cite: 8, 9]
+# Função Deep Scan (Aprendizado Profundo)
 if st.sidebar.button("🧠 Deep Scan (Aprendizado Profundo)"):
     prog = st.sidebar.progress(0)
     for i, ativo in enumerate(watchlist):
         try:
             df_hist = yf.download(ativo, period="30d", interval=tf_op, progress=False)
             df_hist.to_csv(f"{FOLDER_BRAIN}/{ativo}.csv")
-        except: pass
+        except:
+            pass
         prog.progress((i + 1) / len(watchlist))
     st.sidebar.success("Memória IA Atualizada!")
 
-# Scanner inicia DESATIVADO[cite: 7]
+# Scanner inicia DESATIVADO
 btn_on = st.sidebar.toggle("🚀 Iniciar Scanner IA", value=False)
 
 if st.sidebar.button("🗑️ Limpar Histórico"):
@@ -86,9 +89,8 @@ st.title("🛰️ IA QUANT - LIVE MARKET ADAPTIVE")
 col_sinais, col_log = st.columns([1, 1.2])
 
 if 'log_visual' not in st.session_state:
-    st.session_state.log_visual = [][cite: 9]
+    st.session_state.log_visual = []
 
-# Reserva de espaços para evitar o congelamento da imagem 1000000247.png[cite: 11]
 with col_sinais:
     st.subheader("⚡ Sinais Ativos")
     area_sinais = st.empty()
@@ -102,13 +104,14 @@ if btn_on and modelo is not None and watchlist:
     while True:
         try:
             for ativo in watchlist:
-                # Download com período suficiente para os 4 indicadores
+                # Busca de dados para os 4 indicadores IA
                 df = yf.download(ativo, period="7d", interval=tf_op, progress=False)
-                if df.empty or len(df) < 50: continue
-                if isinstance(df.columns, pd.MultiIndex): 
+                if df.empty or len(df) < 50:
+                    continue
+                if isinstance(df.columns, pd.MultiIndex):
                     df.columns = df.columns.get_level_values(0)
                 
-                # CÁLCULO DOS 4 INDICADORES DA IA
+                # Cálculos Técnicos (RSI, EMA, Distância e Força)
                 df['RSI'] = 100 - (100 / (1 + df['Close'].diff().gt(0).rolling(14).mean() / df['Close'].diff().lt(0).rolling(14).mean()))
                 df['EMA_200'] = df['Close'].ewm(span=200, adjust=False).mean()
                 df['Dist_EMA'] = (df['Close'] - df['EMA_200']) / df['EMA_200']
@@ -119,12 +122,11 @@ if btn_on and modelo is not None and watchlist:
                 df_clean = df.dropna(subset=['RSI', 'Dist_EMA', 'Vol_ZScore', 'Forca_Corpo'])
                 
                 if not df_clean.empty:
-                    # Predição com o modelo
+                    # Predição Real IA
                     features = ['RSI', 'Dist_EMA', 'Vol_ZScore', 'Forca_Corpo']
                     input_scaled = scaler.transform(df_clean[features].iloc[-1:].values)
                     preds = modelo.predict(input_scaled, verbose=0)[0]
                     
-                    # Probabilidades: [Neutro, Venda, Compra]
                     prob_venda, prob_compra = preds[1], preds[2]
                     status, cor = "⏳ Neutro", "white"
                     
@@ -137,11 +139,10 @@ if btn_on and modelo is not None and watchlist:
                             "Preço": f"{df_clean['Close'].iloc[-1]:.2f}", 
                             "Status": status, "Confiança": f"{max(prob_compra, prob_venda)*100:.1f}%", "Color": cor
                         }
-                        # Evita duplicidade no mesmo minuto[cite: 9]
                         if not any(x['Ativo'] == ativo and x['Hora'][:5] == info['Hora'][:5] for x in st.session_state.log_visual):
                             st.session_state.log_visual.insert(0, info)
 
-                # ATUALIZAÇÃO VISUAL FORÇADA[cite: 9]
+                # Atualização Visual
                 with area_sinais.container():
                     for s in st.session_state.log_visual[:6]:
                         st.markdown(f"""
@@ -154,10 +155,10 @@ if btn_on and modelo is not None and watchlist:
 
                 with area_log.container():
                     if st.session_state.log_visual:
-                        st.table(pd.DataFrame(st.session_state.log_visual).drop(columns=['Color']))[cite: 9]
+                        st.table(pd.DataFrame(st.session_state.log_visual).drop(columns=['Color']))
             
             time.sleep(10)
-        except:
+        except Exception:
             time.sleep(5)
 elif not btn_on:
-    area_sinais.warning("Scanner Pausado na lateral.")[cite: 7]
+    area_sinais.warning("Scanner Pausado na lateral.")
