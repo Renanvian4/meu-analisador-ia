@@ -5,160 +5,175 @@ import numpy as np
 import tensorflow as tf
 import pickle
 import time
-from datetime import datetime
+import os
+from datetime import datetime, timedelta
 
-# Configuração da Página
-st.set_page_config(page_title="IA Scanner Automático", layout="wide")
+# --- CONFIGURAÇÕES DE INTERFACE PARA TABLET ---
+st.set_page_config(page_title="IA Quant Scanner Pro", layout="wide", initial_sidebar_state="collapsed")
 
+st.markdown("""
+    <style>
+        .main .block-container { max-width: 100%; padding-top: 0.5rem; }
+        [data-testid="stMetricValue"] { font-size: 1.6rem !important; }
+        .stDataFrame { font-size: 0.75rem; }
+        .reportview-container { background: #0e1117; }
+    </style>
+""", unsafe_allow_html=True)
+
+# --- DIRETÓRIOS E ARQUIVOS ---
+FOLDER_BRAIN = "cerebro_ia_dados"
+FILE_LOG_ERROS = "memoria_blindada_erros.csv"
+
+if not os.path.exists(FOLDER_BRAIN):
+    os.makedirs(FOLDER_BRAIN)
+
+# --- CARREGAMENTO DE MODELOS ---
 @st.cache_resource
 def load_assets():
-    with open('scaler.pkl', 'rb') as f:
-        s = pickle.load(f)
-    m = tf.keras.models.Sequential([
-        tf.keras.layers.Input(shape=(4,)), 
-        tf.keras.layers.Dense(64, activation='relu'),
-        tf.keras.layers.Dropout(0.1),
-        tf.keras.layers.Dense(32, activation='relu'),
-        tf.keras.layers.Dense(3, activation='softmax')
-    ])
-    m.load_weights('modelo_pesos.weights.h5')
-    return m, s
+    try:
+        with open('scaler.pkl', 'rb') as f:
+            s = pickle.load(f)
+        m = tf.keras.models.Sequential([
+            tf.keras.layers.Input(shape=(4,)), 
+            tf.keras.layers.Dense(64, activation='relu'),
+            tf.keras.layers.Dropout(0.1),
+            tf.keras.layers.Dense(32, activation='relu'),
+            tf.keras.layers.Dense(3, activation='softmax')
+        ])
+        m.load_weights('modelo_pesos.weights.h5')
+        return m, s
+    except Exception as e:
+        st.error(f"Erro ao carregar arquivos da IA: {e}")
+        return None, None
 
 modelo, scaler = load_assets()
 
-# --- INICIALIZAÇÃO DE ESTADOS ---
-if 'log_oportunidades' not in st.session_state:
-    st.session_state.log_oportunidades = []
-if 'watchlist' not in st.session_state:
-    # Lista inicial padrão
-    st.session_state.watchlist = ["BTC-USD", "ETH-USD", "PETR4.SA", "VALE3.SA"]
+# --- MOTOR DE APRENDIZADO NATIVO (DEEP SCAN) ---
+def executar_deep_scan(watchlist):
+    timeframes = {
+        "1m": "7d", "5m": "30d", "15m": "60d", "1h": "120d"
+    }
+    for ativo in watchlist:
+        for tf_nome, periodo in timeframes.items():
+            path = f"{FOLDER_BRAIN}/brain_{ativo}_{tf_nome}.csv"
+            if os.path.exists(path): continue
+            
+            hist = yf.download(ativo, period=periodo, interval=tf_nome, progress=False)
+            if hist.empty: continue
+            
+            # Cálculo de indicadores para estudo
+            hist['RSI'] = 100 - (100 / (1 + hist['Close'].diff().gt(0).rolling(14).mean() / hist['Close'].diff().lt(0).rolling(14).mean()))
+            hist['EMA200'] = hist['Close'].ewm(span=200, adjust=False).mean()
+            hist['Dist'] = (hist['Close'] - hist['EMA200']) / hist['EMA200']
+            pavio = hist['High'] - hist['Low']
+            hist['Corpo'] = np.where(pavio > 0, abs(hist['Close'] - hist['Open']) / pavio, 0)
+            
+            estudo = []
+            for i in range(50, len(hist) - 5):
+                snap = [round(hist['RSI'].iloc[i], 2), round(hist['Dist'].iloc[i], 4), round(hist['Corpo'].iloc[i], 2)]
+                sucesso = 1 if hist['Close'].iloc[i+5] > hist['Close'].iloc[i] else 0
+                estudo.append(snap + [sucesso])
+            
+            pd.DataFrame(estudo).to_csv(path, index=False, header=False)
 
-# --- FUNÇÕES DE IMPORTAÇÃO AUTOMÁTICA ---
-def importar_top_criptos():
-    # Lista das 20 principais moedas (Simulando CoinMarketCap via Yahoo)
-    top_coins = ["BTC-USD", "ETH-USD", "BNB-USD", "SOL-USD", "XRP-USD", "ADA-USD", "DOGE-USD", "TRX-USD", "DOT-USD", "MATIC-USD", "LTC-USD", "SHIB-USD", "AVAX-USD", "LINK-USD", "BCH-USD", "UNI-USD", "XLM-USD", "LEO-USD", "ETC-USD", "ATOM-USD"]
-    for coin in top_coins:
-        if coin not in st.session_state.watchlist:
-            st.session_state.watchlist.append(coin)
-
-def importar_bovespa():
-    # Lista das principais ações da B3 (Blue Chips)
-    b3_stocks = ["PETR4.SA", "VALE3.SA", "ITUB4.SA", "BBDC4.SA", "ABEV3.SA", "BBAS3.SA", "B3SA3.SA", "ITSA4.SA", "MGLU3.SA", "HAPV3.SA", "RENT3.SA", "JBSS3.SA", "SUZB3.SA", "WEGE3.SA", "GGBR4.SA", "CSNA3.SA", "LREN3.SA", "PRIO3.SA"]
-    for stock in b3_stocks:
-        if stock not in st.session_state.watchlist:
-            st.session_state.watchlist.append(stock)
-
-# --- BARRA LATERAL ---
-st.sidebar.header("🔍 Radar de Ativos")
-
-# Botões de Importação em Massa
-col_bt1, col_bt2 = st.sidebar.columns(2)
-if col_bt1.button("🌐 Top Criptos"):
-    importar_top_criptos()
-if col_bt2.button("🇧🇷 Bovespa"):
-    importar_bovespa()
-
-# Campo Manual (Corrigido)
-novo_ticker = st.sidebar.text_input("Adicionar ticker manual (ex: SOL-USD):").upper()
-if st.sidebar.button("➕ Adicionar"):
-    if novo_ticker and novo_ticker not in st.session_state.watchlist:
-        st.session_state.watchlist.append(novo_ticker)
-        st.rerun()
-
-# Multiselect que reflete o estado real da watchlist
-ativos_final = st.sidebar.multiselect(
-    "Ativos sendo monitorados:",
-    options=st.session_state.watchlist,
-    default=st.session_state.watchlist
-)
-
-if st.sidebar.button("🗑️ Limpar Lista"):
-    st.session_state.watchlist = []
-    st.rerun()
+# --- SISTEMA DE MEMÓRIA E FILTRO ---
+def consultar_similaridade_erro(ativo, features, tipo, timeframe):
+    path = f"{FOLDER_BRAIN}/brain_{ativo}_{timeframe}.csv"
+    if not os.path.exists(path): return False
+    
+    # Carrega memória de falhas (resultado 0 para compra, 1 para venda)
+    df = pd.read_csv(path, names=['r', 'd', 'c', 'res'])
+    alvo_erro = 0 if tipo == "COMPRA" else 1
+    erros = df[df['res'] == alvo_erro]
+    
+    if erros.empty: return False
+    
+    distancias = np.linalg.norm(erros[['r', 'd', 'c']].values - features[:3], axis=1)
+    return np.min(distancias) < 0.05
 
 # --- INTERFACE PRINCIPAL ---
-st.title("🛰️ Scanner IA Multi-Mercado")
-col_monitor, col_log = st.columns([2, 1])
+if 'log_visual' not in st.session_state:
+    st.session_state.log_visual = []
+if 'audit_queue' not in st.session_state:
+    st.session_state.audit_queue = []
 
-with col_monitor:
-    st.subheader("⚡ Sinais Ativos")
-    placeholder_cards = st.empty()
+st.title("🛰️ IA QUANT ADAPTATIVA")
 
-with col_log:
-    st.subheader("📜 Histórico de Sinais")
-    placeholder_log = st.empty()
+with st.sidebar:
+    st.header("⚙️ Scanner")
+    lista_ativos = st.multiselect("Ativos", ["WIN=F", "WDO=F", "BTC-USD", "ETH-USD"], default=["WIN=F", "WDO=F"])
+    tf_selecionado = st.selectbox("Timeframe Operacional", ["1m", "5m", "15m", "1h"], index=1)
+    if st.button("🧠 Executar Deep Scan"):
+        with st.spinner("IA aprendendo padrões históricos..."):
+            executar_deep_scan(lista_ativos)
+        st.success("Estudo concluído!")
+    if st.button("🗑️ Limpar Log Visual"):
+        st.session_state.log_visual = []
+        st.rerun()
 
-# --- LOOP DE PROCESSAMENTO ---
-if st.sidebar.toggle('▶️ Ligar Radar IA'):
-    if not ativos_final:
-        st.warning("Adicione ativos para começar a varredura.")
-    else:
-        while True:
-            try:
-                # Download em massa otimizado
-                dados = yf.download(ativos_final, period="7d", interval="5m", progress=False, group_by='ticker')
+col_monitor, col_historico = st.columns([1, 1.2])
+
+# --- LOOP DE EXECUÇÃO ---
+placeholder_cards = col_monitor.empty()
+placeholder_table = col_historico.empty()
+
+if modelo is not None:
+    while True:
+        try:
+            dados = yf.download(lista_ativos, period="2d", interval=tf_selecionado, progress=False, group_by='ticker')
+            
+            for ativo in lista_ativos:
+                df = dados[ativo] if len(lista_ativos) > 1 else dados
+                if df.empty or len(df) < 30: continue
                 
-                oportunidades = []
+                # Cálculo rápido de indicadores
+                df['RSI'] = 100 - (100 / (1 + df['Close'].diff().gt(0).rolling(14).mean() / df['Close'].diff().lt(0).rolling(14).mean()))
+                df['EMA200'] = df['Close'].ewm(span=200, adjust=False).mean()
+                df['Dist'] = (df['Close'] - df['EMA200']) / df['EMA200']
+                pavio = df['High'] - df['Low']
+                df['Corpo'] = np.where(pavio > 0, abs(df['Close'] - df['Open']) / pavio, 0)
                 
-                for ativo in ativos_final:
-                    df = dados[ativo] if len(ativos_final) > 1 else dados
-                    if df.empty or len(df) < 50: continue
+                last = df.dropna().iloc[-1:]
+                f_raw = last[['RSI', 'Dist', 'Dist', 'Corpo']].values # Alinhado ao input do scaler
+                f_scaled = scaler.transform(f_raw)
+                
+                preds = modelo.predict(f_scaled, verbose=0)[0]
+                preco_at = last['Close'].values[0]
+                
+                tipo = "COMPRA" if preds[2] > 0.65 and preco_at > last['EMA200'].values[0] else \
+                       "VENDA" if preds[1] > 0.65 and preco_at < last['EMA200'].values[0] else None
+                
+                if tipo and not consultar_similaridade_erro(ativo, f_raw[0], tipo, tf_selecionado):
+                    info = {"Ativo": ativo, "Hora": datetime.now().strftime("%H:%M"), "Preço": f"{preco_at:.2f}", "Tipo": tipo}
                     
-                    # Cálculo de Indicadores
-                    df['RSI'] = 100 - (100 / (1 + df['Close'].diff().gt(0).rolling(14).mean() / df['Close'].diff().lt(0).rolling(14).mean()))
-                    df['EMA_200'] = df['Close'].ewm(span=200, adjust=False).mean()
-                    df['Dist_EMA'] = (df['Close'] - df['EMA_200']) / df['EMA_200']
-                    df['Vol_ZScore'] = (df['Volume'] - df['Volume'].rolling(20).mean()) / df['Volume'].rolling(20).std()
-                    pavio = df['High'] - df['Low']
-                    df['Forca_Corpo'] = np.where(pavio > 0, abs(df['Close'] - df['Open']) / pavio, 0)
-                    
-                    df_clean = df.dropna(subset=['RSI', 'Dist_EMA', 'Vol_ZScore', 'Forca_Corpo'])
-                    
-                    if not df_clean.empty:
-                        input_scaled = scaler.transform(df_clean[['RSI', 'Dist_EMA', 'Vol_ZScore', 'Forca_Corpo']].iloc[-1:].values)
-                        preds = modelo.predict(input_scaled, verbose=0)[0]
-                        
-                        tipo = "COMPRA" if preds[2] > 0.65 else "VENDA" if preds[1] > 0.65 else None
-                        
-                        if tipo:
-                            info = {
-                                "Ativo": ativo,
-                                "Hora": datetime.now().strftime("%H:%M:%S"),
-                                "Preço": f"{df_clean['Close'].iloc[-1]:.2f}",
-                                "Tipo": tipo,
-                                "Confiança": f"{max(preds[1], preds[2])*100:.1f}%"
-                            }
-                            oportunidades.append(info)
-                            
-                            # Log único: Só adiciona se o último registro do ativo for diferente ou tiver mais de 5 min
-                            if not st.session_state.log_oportunidades or st.session_state.log_oportunidades[0]['Ativo'] != ativo:
-                                st.session_state.log_oportunidades.insert(0, info)
+                    # Evita duplicados no mesmo minuto
+                    if not any(l['Ativo'] == ativo and l['Hora'] == info['Hora'] for l in st.session_state.log_visual):
+                        st.session_state.log_visual.insert(0, info)
+                        st.session_state.audit_queue.append({
+                            "ativo": ativo, "entrada": preco_at, "tipo": tipo, "f": f_raw[0],
+                            "check_at": datetime.now() + timedelta(minutes=5), "done": False
+                        })
 
-                # --- RENDERIZAÇÃO ---
-                with placeholder_cards.container():
-                    if oportunidades:
-                        # Grid dinâmico de cards
-                        for i in range(0, len(oportunidades), 4):
-                            cols = st.columns(4)
-                            for j, op in enumerate(oportunidades[i:i+4]):
-                                cor = "#00FF00" if op['Tipo'] == "COMPRA" else "#FF4B4B"
-                                with cols[j]:
-                                    st.markdown(f"""
-                                        <div style="border:2px solid {cor}; padding:10px; border-radius:10px; background:#1e1e1e; text-align:center; margin-bottom:10px;">
-                                            <h4 style="margin:0;">{op['Ativo']}</h4>
-                                            <h2 style="color:{cor}; margin:5px 0;">{op['Tipo']}</h2>
-                                            <p style="margin:0; font-weight:bold;">{op['Preço']}</p>
-                                        </div>
-                                    """, unsafe_allow_html=True)
-                    else:
-                        st.info("🔎 Escaneando mercado... Sem sinais de alta probabilidade.")
+            # Auditoria de Erros (Self-Learning)
+            for a in st.session_state.audit_queue:
+                if not a['done'] and datetime.now() >= a['check_at']:
+                    v_hist = yf.download(a['ativo'], period="1d", interval="1m", progress=False).iloc[-1:]
+                    ganhou = (a['tipo'] == "COMPRA" and v_hist['Close'].values[0] > a['entrada']) or \
+                             (a['tipo'] == "VENDA" and v_hist['Close'].values[0] < a['entrada'])
+                    if not ganhou:
+                        # Salva erro na memória blindada
+                        with open(f"{FOLDER_BRAIN}/brain_{a['ativo']}_{tf_selecionado}.csv", "a") as f:
+                            f.write(f"{a['f'][0]},{a['f'][1]},{a['f'][2]},0\n")
+                    a['done'] = True
 
-                with placeholder_log.container():
-                    if st.session_state.log_oportunidades:
-                        st.table(pd.DataFrame(st.session_state.log_oportunidades).head(20))
-
-                time.sleep(10) # Tempo seguro para monitorar muitos ativos
-
-            except Exception as e:
-                st.error(f"Erro na varredura: {e}")
-                time.sleep(5)
+            # Renderização
+            with placeholder_cards.container():
+                for s in st.session_state.log_visual[:5]:
+                    cor = "#00FF00" if s['Tipo'] == "COMPRA" else "#FF4B4B"
+                    st.markdown(f"<div style='border-left:4px solid {cor}; padding:10px; background:#1e1e1e; margin-bottom:5px;'><b>{s['Ativo']}</b>: {s['Tipo']} @ {s['Preço']}</div>", unsafe_allow_html=True)
+            
+            placeholder_table.dataframe(pd.DataFrame(st.session_state.log_visual), use_container_width=True)
+            
+            time.sleep(20)
+        except Exception as e:
+            time.sleep(10)
