@@ -9,8 +9,9 @@ import os
 from datetime import datetime
 
 # --- CONFIGURAÇÃO DE INTERFACE ---
-st.set_page_config(page_title="IA Analítica Pro", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="IA Quant - Radar Adaptativo", layout="wide", initial_sidebar_state="expanded")
 
+# Estilização para tablet[cite: 7]
 st.markdown("""
     <style>
         .main .block-container { max-width: 100%; padding-top: 0.5rem; }
@@ -20,7 +21,12 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- CARREGAMENTO DE ASSETS (IA) ---
+# --- CONFIGURAÇÃO DE DIRETÓRIOS ---
+FOLDER_BRAIN = "cerebro_ia_dados"
+if not os.path.exists(FOLDER_BRAIN):
+    os.makedirs(FOLDER_BRAIN)
+
+# --- CARREGAMENTO DE MODELO E SCALER ---
 @st.cache_resource
 def load_assets():
     try:
@@ -40,46 +46,92 @@ def load_assets():
 
 modelo, scaler = load_assets()
 
-# --- SIDEBAR ---
-st.sidebar.title("🛰️ Radar IA Pro")
+# --- FUNÇÃO DE APRENDIZADO (DEEP SCAN) ---
+def executar_deep_scan(selecionados):
+    timeframes = {"1m": "7d", "5m": "30d", "15m": "60d", "1h": "120d"}
+    prog = st.sidebar.progress(0)
+    total = len(selecionados) * len(timeframes)
+    count = 0
+    for ativo in selecionados:
+        for tf_nome, periodo in timeframes.items():
+            count += 1
+            try:
+                hist = yf.download(ativo, period=periodo, interval=tf_nome, progress=False)
+                if hist.empty: continue
+                # Limpeza de colunas MultiIndex
+                if isinstance(hist.columns, pd.MultiIndex): hist.columns = hist.columns.get_level_values(0)
+                
+                # Cálculos para a memória da IA
+                close = hist['Close'].values.flatten()
+                ema = pd.Series(close).ewm(span=200, adjust=False).mean()
+                dist = (close - ema) / ema
+                df_p = pd.DataFrame([[dist[i], 1 if close[i+5] > close[i] else 0] for i in range(50, len(close)-5)])
+                df_p.to_csv(f"{FOLDER_BRAIN}/brain_{ativo}_{tf_nome}.csv", index=False, header=False)
+            except: pass
+            prog.progress(count / total)
+
+# --- SIDEBAR (INTERFACE DE CONTROLE) ---
+st.sidebar.title("🛰️ Radar Adaptativo")
 
 DICIONARIO_BASE = {
-    "🚀 Cripto": ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "DOGE-USD"],
-    "📊 B3": ["WIN=F", "WDO=F", "PETR4.SA", "VALE3.SA"]
+    "🚀 Cripto (Favoritas)": ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "DOGE-USD"],
+    "📊 Futuros B3": ["WIN=F", "WDO=F"],
+    "🇧🇷 Ações B3": ["PETR4.SA", "VALE3.SA", "ITUB4.SA", "BBDC4.SA", "ABEV3.SA"]
 }
 
 cat = st.sidebar.selectbox("Filtrar Categoria:", list(DICIONARIO_BASE.keys()))
-ativos_sel = st.sidebar.multiselect("Ativos:", DICIONARIO_BASE[cat], default=DICIONARIO_BASE[cat][:2])
-tf_op = st.sidebar.selectbox("Timeframe:", ["1m", "5m", "15m", "1h"], index=0)
+favoritos = st.sidebar.multiselect("Favoritos:", DICIONARIO_BASE[cat], default=DICIONARIO_BASE[cat][:2])
 
-# Scanner inicia DESATIVADO
+# CAMPO RESTAURADO: Busca Livre para incluir novos ativos
+busca_extra = st.sidebar.text_input("Incluir Ativo Extra (Ticker API):").upper().strip()
+
+# Consolidação da lista de monitoramento
+ativos_sel = list(favoritos)
+if busca_extra and busca_extra not in ativos_sel:
+    ativos_sel.append(busca_extra)
+
+tf_op = st.sidebar.selectbox("Timeframe de Operação:", ["1m", "5m", "15m", "1h"], index=1)
+
+# FUNÇÃO RESTAURADA: Botão de Deep Scan
+if st.sidebar.button("🧠 Deep Scan (Aprendizado Profundo)"):
+    if ativos_sel:
+        executar_deep_scan(ativos_sel)
+        st.sidebar.success("Memória IA Atualizada!")
+
+# Scanner inicia desativado conforme solicitado
 btn_on = st.sidebar.toggle("🚀 Iniciar Scanner IA", value=False)
 
-if st.sidebar.button("Limpar Histórico"):
+if st.sidebar.button("🗑️ Limpar Histórico"):
     st.session_state.log_visual = []
     st.rerun()
 
-# --- LAYOUT PRINCIPAL ---
-st.title("🛰️ IA QUANT - LIVE SCANNER")
+# --- QUADRO PRINCIPAL ---
+st.title("🛰️ IA QUANT - LIVE MARKET ADAPTIVE")
 col_sinais, col_log = st.columns([1, 1.2])
 
 if 'log_visual' not in st.session_state:
     st.session_state.log_visual = []
 
-area_sinais = col_sinais.empty()
-area_log = col_log.empty()
+# containers fixos para exibição central e lateral
+with col_sinais:
+    st.subheader("⚡ Sinais Ativos")
+    area_sinais = st.empty()
 
-# --- LOOP DE EXECUÇÃO ---
+with col_log:
+    st.subheader("📜 Auditoria de Sinais")
+    area_log = st.empty()
+
+# --- LOOP DE PROCESSAMENTO (IA REAL TIME) ---
 if btn_on and modelo is not None and ativos_sel:
     while True:
         try:
             for ativo in ativos_sel:
-                # CORREÇÃO: period="7d" para garantir dados para EMA200 e RSI
+                # CORREÇÃO: period="7d" garante dados para EMA200[cite: 7]
                 df = yf.download(ativo, period="7d", interval=tf_op, progress=False)
                 if df.empty or len(df) < 50: continue
                 if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
                 
-                # RECALCULO DOS INDICADORES DA VERSÃO FUNCIONAL
+                # CÁLCULO DOS 4 INDICADORES DA IA
                 df['RSI'] = 100 - (100 / (1 + df['Close'].diff().gt(0).rolling(14).mean() / df['Close'].diff().lt(0).rolling(14).mean()))
                 df['EMA_200'] = df['Close'].ewm(span=200, adjust=False).mean()
                 df['Dist_EMA'] = (df['Close'] - df['EMA_200']) / df['EMA_200']
@@ -90,14 +142,12 @@ if btn_on and modelo is not None and ativos_sel:
                 df_clean = df.dropna(subset=['RSI', 'Dist_EMA', 'Vol_ZScore', 'Forca_Corpo'])
                 
                 if not df_clean.empty:
-                    # PREDIÇÃO REAL COM A IA
+                    # Predição Real com o Modelo .h5[cite: 7]
                     features = ['RSI', 'Dist_EMA', 'Vol_ZScore', 'Forca_Corpo']
                     input_scaled = scaler.transform(df_clean[features].iloc[-1:].values)
                     preds = modelo.predict(input_scaled, verbose=0)[0]
-                    
                     prob_neutro, prob_venda, prob_compra = preds
                     
-                    # Definição de Status e Cor
                     status, cor = "⏳ Neutro", "white"
                     if prob_compra > 0.60:
                         status, cor = "🚀 COMPRA", "#00FF00"
@@ -113,12 +163,11 @@ if btn_on and modelo is not None and ativos_sel:
                             "Confiança": f"{max(prob_compra, prob_venda)*100:.1f}%",
                             "Color": cor
                         }
-                        
-                        # Adiciona ao histórico se for novo
+                        # Adiciona se for sinal novo no minuto
                         if not any(x['Ativo'] == ativo and x['Hora'][:5] == info['Hora'][:5] for x in st.session_state.log_visual):
                             st.session_state.log_visual.insert(0, info)
 
-            # RENDERIZAÇÃO LADO A LADO
+            # ATUALIZAÇÃO VISUAL IMEDIATA
             with area_sinais.container():
                 for s in st.session_state.log_visual[:6]:
                     st.markdown(f"""
@@ -131,11 +180,10 @@ if btn_on and modelo is not None and ativos_sel:
 
             with area_log.container():
                 if st.session_state.log_visual:
-                    df_visual = pd.DataFrame(st.session_state.log_visual).drop(columns=['Color'])
-                    st.table(df_visual)
+                    st.dataframe(pd.DataFrame(st.session_state.log_visual).drop(columns=['Color']), use_container_width=True, hide_index=True)
 
             time.sleep(10)
-        except Exception as e:
+        except:
             time.sleep(5)
 elif not btn_on:
-    area_sinais.warning("Scanner pausado. Ative para iniciar.")
+    area_sinais.warning("Scanner Pausado. Ative na lateral para ver os sinais.")
