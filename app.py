@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 # --- CONFIGURAÇÃO DE INTERFACE ---
 st.set_page_config(page_title="IA Quant - B3 & Cripto", layout="wide", initial_sidebar_state="expanded")
 
-# CSS para ajuste de tela no tablet e botões largos
+# CSS para ajuste de tela no tablet
 st.markdown("""
     <style>
         .main .block-container { max-width: 100%; padding-top: 0.5rem; }
@@ -21,19 +21,20 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- MAPEAMENTO DINÂMICO DE ATIVOS (SEM STOCKS EUA) ---
+# --- MAPEAMENTO DINÂMICO DE ATIVOS ---
 DICIONARIO_ATIVOS = {
     "📊 Futuros B3": ["WIN=F", "WDO=F"],
     "🚀 Criptomoedas": ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "DOGE-USD", "LINK-USD", "MATIC-USD"],
     "🇧🇷 Ações B3": ["PETR4.SA", "VALE3.SA", "ITUB4.SA", "BBDC4.SA", "ABEV3.SA", "MGLU3.SA", "B3SA3.SA", "RENT3.SA", "GGBR4.SA"]
 }
 
-TODOS_ATIVOS = [item for sublist in DICIONARIO_ATIVOS.values() for item in sublist][cite: 1]
+# LINHA CORRIGIDA (Sem etiquetas de texto no meio do código)
+TODOS_ATIVOS = [item for sublist in DICIONARIO_ATIVOS.values() for item in sublist]
 
 # --- DIRETÓRIOS DE INTELIGÊNCIA ---
 FOLDER_BRAIN = "cerebro_ia_dados"
 if not os.path.exists(FOLDER_BRAIN):
-    os.makedirs(FOLDER_BRAIN)[cite: 1]
+    os.makedirs(FOLDER_BRAIN)
 
 # --- CARREGAMENTO DE MODELOS ---
 @st.cache_resource
@@ -70,14 +71,13 @@ def executar_deep_scan(selecionados):
                 hist = yf.download(ativo, period=periodo, interval=tf_nome, progress=False)
                 if hist.empty or len(hist) < 50: continue
                 
-                # Snapshot de aprendizado persistente
                 close = hist['Close'].values.flatten()
                 ema200 = pd.Series(close).ewm(span=200, adjust=False).mean()
                 dist = (close - ema200) / ema200
                 
                 estudo = [[round(dist[i], 4), 1 if close[i+5] > close[i] else 0] for i in range(50, len(close) - 5)]
                 if estudo:
-                    pd.DataFrame(estudo).to_csv(path, index=False, header=False)[cite: 1]
+                    pd.DataFrame(estudo).to_csv(path, index=False, header=False)
             except:
                 continue
             progresso_sidebar.progress(count / total_tasks)
@@ -85,7 +85,6 @@ def executar_deep_scan(selecionados):
 # --- INTERFACE LATERAL (SIDEBAR) ---
 st.sidebar.title("🛰️ Radar Adaptativo")
 
-# Seleção Dinâmica
 categoria = st.sidebar.selectbox("Filtrar Categoria:", list(DICIONARIO_ATIVOS.keys()))
 ativos_sugeridos = DICIONARIO_ATIVOS[categoria]
 
@@ -93,14 +92,14 @@ ativos_selecionados = st.sidebar.multiselect(
     "Ativos para Monitorar:", 
     options=TODOS_ATIVOS, 
     default=ativos_sugeridos[:2]
-)[cite: 1]
+)
 
 tf_op = st.sidebar.selectbox("Timeframe de Análise", ["1m", "5m", "15m", "1h"], index=1)
 
 if st.sidebar.button("🧠 Deep Scan (Estudar Histórico)"):
     if ativos_selecionados:
         executar_deep_scan(ativos_selecionados)
-        st.sidebar.success("Memória Blindada Atualizada!")[cite: 1]
+        st.sidebar.success("Memória Blindada Atualizada!")
     else:
         st.sidebar.warning("Selecione ativos primeiro.")
 
@@ -110,9 +109,9 @@ if st.sidebar.button("🗑️ Limpar Log Visual"):
     st.session_state.log_visual = []
     st.rerun()
 
-# --- INTERFACE PRINCIPAL (LAYOUT RESTAURADO) ---
+# --- INTERFACE PRINCIPAL ---
 st.title("IA QUANT - LIVE MARKET")
-col_sinais, col_log = st.columns([1, 1.2])[cite: 1]
+col_sinais, col_log = st.columns([1, 1.2])
 
 if 'log_visual' not in st.session_state:
     st.session_state.log_visual = []
@@ -136,9 +135,8 @@ if btn_ativo and modelo is not None and ativos_selecionados:
                 
                 info = {"Ativo": ativo, "Hora": datetime.now().strftime("%H:%M:%S"), "Preço": f"{c:.2f}", "Tipo": tipo}
                 
-                # Registra apenas se for um novo segundo/sinal
                 if not any(x['Ativo'] == ativo and x['Hora'] == info['Hora'] for x in st.session_state.log_visual):
-                    st.session_state.log_visual.insert(0, info)[cite: 1]
+                    st.session_state.log_visual.insert(0, info)
 
             # Quadro de Sinais (Esquerda)
             with placeholder_sinais.container():
@@ -156,7 +154,7 @@ if btn_ativo and modelo is not None and ativos_selecionados:
             with placeholder_log.container():
                 st.subheader("📜 Auditoria de Sinais")
                 if st.session_state.log_visual:
-                    st.dataframe(pd.DataFrame(st.session_state.log_visual), use_container_width=True, hide_index=True)[cite: 1]
+                    st.dataframe(pd.DataFrame(st.session_state.log_visual), use_container_width=True, hide_index=True)
 
             time.sleep(15)
         except Exception:
